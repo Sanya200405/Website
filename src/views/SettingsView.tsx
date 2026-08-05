@@ -1,6 +1,6 @@
 import React from 'react';
-import { Settings, RefreshCw, Sun, Moon, Shield, Database } from 'lucide-react';
-import { AppState } from '../services/store';
+import { Settings, RefreshCw } from 'lucide-react';
+import type { AppState } from '../services/store';
 
 export const SettingsView: React.FC<{
   state: AppState;

@@ -1,6 +1,6 @@
 import React from 'react';
-import { History, User, Tag } from 'lucide-react';
-import { AppState } from '../services/store';
+import { History } from 'lucide-react';
+import type { AppState } from '../services/store';
 
 export const ActivityView: React.FC<{ state: AppState }> = ({ state }) => {
   const isDark = state.theme === 'dark';

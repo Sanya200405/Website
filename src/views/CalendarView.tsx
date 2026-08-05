@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Clock, Users2, ShieldAlert, Award } from 'lucide-react';
-import { AppState } from '../services/store';
+import React from 'react';
+import { Calendar as CalendarIcon } from 'lucide-react';
+import type { AppState } from '../services/store';
 
 export const CalendarView: React.FC<{ state: AppState }> = ({ state }) => {
   const isDark = state.theme === 'dark';

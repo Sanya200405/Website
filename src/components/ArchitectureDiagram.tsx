@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Cpu, Zap, Activity, Radio, Cog, BatteryCharging, ShieldAlert } from 'lucide-react';
+import { Cpu, Zap, Activity, Cog, BatteryCharging } from 'lucide-react';
 
 export const ArchitectureDiagram: React.FC<{ theme: 'dark' | 'light' }> = ({ theme }) => {
   const isDark = theme === 'dark';

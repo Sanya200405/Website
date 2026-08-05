@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { FlaskConical, Plus, LineChart as ChartIcon, CheckCircle2, AlertCircle } from 'lucide-react';
+import { FlaskConical, Plus } from 'lucide-react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend } from 'recharts';
-import { AppState } from '../services/store';
-import { ExperimentLog } from '../types';
+import type { AppState } from '../services/store';
+import type { ExperimentLog } from '../types';
 
 export const ExperimentsView: React.FC<{
   state: AppState;
@@ -10,6 +10,56 @@ export const ExperimentsView: React.FC<{
 }> = ({ state, onAddExperiment }) => {
   const isDark = state.theme === 'dark';
   const [selectedExp, setSelectedExp] = useState<ExperimentLog>(state.experiments[0]);
+  const [showAddModal, setShowAddModal] = useState(false);
+
+  const [title, setTitle] = useState('');
+  const [objective, setObjective] = useState('');
+  const [motorUsed, setMotorUsed] = useState('MAD 5005 BLDC (350KV)');
+  const [supplyVoltageV, setSupplyVoltageV] = useState(24);
+  const [pwmFrequencyKhz, setPwmFrequencyKhz] = useState(20);
+  const [expectedResult, setExpectedResult] = useState('');
+  const [actualResult, setActualResult] = useState('');
+  const [observations, setObservations] = useState('');
+  const [nextAction, setNextAction] = useState('');
+
+  const handleCreate = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim()) return;
+
+    const newExp: Omit<ExperimentLog, 'id'> = {
+      title,
+      objective,
+      date: new Date().toISOString().split('T')[0],
+      conductedBy: state.currentUser.name,
+      hardwareSetup: 'Custom 4-Layer Inverter v1.1 + STM32G4 Core',
+      motorUsed,
+      supplyVoltageV: Number(supplyVoltageV),
+      supplyCurrentA: 5,
+      pwmFrequencyKhz: Number(pwmFrequencyKhz),
+      motorSpeedRpm: 1200,
+      loadTorqueNm: 0.5,
+      gearRatio: '10:1 Planetary Reducer',
+      controllerSettings: '20kHz FOC, Ki=0.15, Kp=2.4',
+      expectedResult,
+      actualResult,
+      observations,
+      problemsEncountered: 'None reported.',
+      conclusion: 'Test completed successfully.',
+      nextAction,
+      dataPoints: [
+        { timeMs: 0, targetCurrentA: 0, measuredCurrentA: 0, tempC: 25 },
+        { timeMs: 10, targetCurrentA: 5, measuredCurrentA: 4.8, tempC: 26 },
+        { timeMs: 20, targetCurrentA: 5, measuredCurrentA: 5.1, tempC: 27 },
+        { timeMs: 30, targetCurrentA: 5, measuredCurrentA: 5.0, tempC: 28 },
+        { timeMs: 40, targetCurrentA: 0, measuredCurrentA: 0.2, tempC: 29 },
+      ],
+      tags: ['TestBench', 'FOC']
+    };
+
+    onAddExperiment(newExp);
+    setTitle('');
+    setShowAddModal(false);
+  };
 
   return (
     <div className="space-y-6 pb-12">
@@ -24,6 +74,14 @@ export const ExperimentsView: React.FC<{
             Record motor test bench runs, phase current step response, thermal rise, and planetary gearbox efficiency measurements.
           </p>
         </div>
+
+        <button
+          onClick={() => setShowAddModal(true)}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white text-xs font-semibold shadow-md shadow-cyan-500/20"
+        >
+          <Plus className="w-4 h-4" />
+          <span>Record Experiment</span>
+        </button>
       </div>
 
       {/* Main Grid: Experiment List & Waveform Plot Inspector */}
@@ -147,6 +205,57 @@ export const ExperimentsView: React.FC<{
           </div>
         )}
       </div>
+
+      {/* Add Experiment Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+          <div className={`w-full max-w-xl rounded-2xl border p-6 ${isDark ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white'}`}>
+            <h3 className="text-sm font-bold mb-4">Record New Dynamometer Experiment Run</h3>
+            <form onSubmit={handleCreate} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-semibold mb-1">Experiment Title *</label>
+                <input type="text" required value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Phase Current Step Response Test" className={`w-full p-2 rounded-xl border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50'}`} />
+              </div>
+              <div>
+                <label className="block font-semibold mb-1">Objective</label>
+                <input type="text" value={objective} onChange={(e) => setObjective(e.target.value)} placeholder="Objective of test..." className={`w-full p-2 rounded-xl border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50'}`} />
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block font-semibold mb-1">Motor Used</label>
+                  <input type="text" value={motorUsed} onChange={(e) => setMotorUsed(e.target.value)} className={`w-full p-2 rounded-xl border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50'}`} />
+                </div>
+                <div>
+                  <label className="block font-semibold mb-1">Bus Voltage (V)</label>
+                  <input type="number" value={supplyVoltageV} onChange={(e) => setSupplyVoltageV(Number(e.target.value))} className={`w-full p-2 rounded-xl border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50'}`} />
+                </div>
+                <div>
+                  <label className="block font-semibold mb-1">PWM Freq (kHz)</label>
+                  <input type="number" value={pwmFrequencyKhz} onChange={(e) => setPwmFrequencyKhz(Number(e.target.value))} className={`w-full p-2 rounded-xl border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50'}`} />
+                </div>
+              </div>
+              <div>
+                <label className="block font-semibold mb-1">Expected vs Actual Results</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <input type="text" value={expectedResult} onChange={(e) => setExpectedResult(e.target.value)} placeholder="Expected..." className={`w-full p-2 rounded-xl border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50'}`} />
+                  <input type="text" value={actualResult} onChange={(e) => setActualResult(e.target.value)} placeholder="Actual..." className={`w-full p-2 rounded-xl border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50'}`} />
+                </div>
+              </div>
+              <div>
+                <label className="block font-semibold mb-1">Observations & Next Action</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <input type="text" value={observations} onChange={(e) => setObservations(e.target.value)} placeholder="Observations..." className={`w-full p-2 rounded-xl border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50'}`} />
+                  <input type="text" value={nextAction} onChange={(e) => setNextAction(e.target.value)} placeholder="Next step..." className={`w-full p-2 rounded-xl border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50'}`} />
+                </div>
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <button type="button" onClick={() => setShowAddModal(false)} className="px-4 py-2 rounded-xl border border-slate-800 text-slate-400">Cancel</button>
+                <button type="submit" className="px-5 py-2 rounded-xl bg-cyan-500 text-slate-950 font-bold">Record Experiment</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

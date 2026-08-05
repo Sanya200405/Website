@@ -34,6 +34,14 @@ interface SidebarProps {
   issueCount: number;
 }
 
+interface NavItem {
+  id: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  badge?: number;
+  badgeColor?: string;
+}
+
 export const Sidebar: React.FC<SidebarProps> = ({
   currentNav,
   onSelectNav,
@@ -43,7 +51,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const isDark = theme === 'dark';
 
-  const mainNav = [
+  const mainNav: NavItem[] = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'roadmap', label: 'Project Roadmap', icon: Map },
     { id: 'tasks', label: 'Tasks', icon: CheckSquare, badge: taskCount },
@@ -52,7 +60,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'documentation', label: 'Documentation', icon: FileText },
   ];
 
-  const engineeringNav = [
+  const engineeringNav: NavItem[] = [
     { id: 'components', label: 'Component DB', icon: Cpu },
     { id: 'hardware', label: 'Hardware Stage', icon: FolderGit2 },
     { id: 'firmware', label: 'Firmware & Code', icon: Code2 },
@@ -62,7 +70,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'decisions', label: 'Decision Log (ADR)', icon: GitCommit },
   ];
 
-  const workflowNav = [
+  const workflowNav: NavItem[] = [
     { id: 'meetings', label: 'Meetings', icon: Users2 },
     { id: 'calendar', label: 'Calendar', icon: CalendarIcon },
     { id: 'milestones', label: 'Milestones', icon: Award },
@@ -71,7 +79,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
-  const renderNavGroup = (title: string, items: typeof mainNav) => (
+  const renderNavGroup = (title: string, items: NavItem[]) => (
     <div className="mb-5">
       <h3 className={`px-3 mb-2 text-[10px] font-bold tracking-wider uppercase ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
         {title}

@@ -239,7 +239,7 @@ export function useProjectStore() {
       assignedToName: assignedUser.name,
       assignedToAvatar: assignedUser.avatar,
       priority: 'High',
-      status: 'To Do',
+      status: 'Not Started',
       category: 'Management',
       startDate: new Date().toISOString().split('T')[0],
       deadline: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],

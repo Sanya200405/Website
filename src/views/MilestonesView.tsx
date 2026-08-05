@@ -1,6 +1,6 @@
 import React from 'react';
-import { Award, CheckCircle2, Clock, Plus } from 'lucide-react';
-import { AppState } from '../services/store';
+import { Award, CheckCircle2 } from 'lucide-react';
+import type { AppState } from '../services/store';
 
 export const MilestonesView: React.FC<{ state: AppState }> = ({ state }) => {
   const isDark = state.theme === 'dark';

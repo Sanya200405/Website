@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { GitCommit, Plus, CheckCircle2, XCircle } from 'lucide-react';
-import { AppState } from '../services/store';
-import { DecisionRecord } from '../types';
+import { GitCommit, Plus } from 'lucide-react';
+import type { AppState } from '../services/store';
+import type { DecisionRecord } from '../types';
 
 export const DecisionsView: React.FC<{
   state: AppState;

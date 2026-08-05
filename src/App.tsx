@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useProjectStore } from './services/store';
-import { Sidebar, NavSection } from './components/Sidebar';
+import { Sidebar, type NavSection } from './components/Sidebar';
 import { Header } from './components/Header';
 import { GlobalSearchModal } from './components/GlobalSearchModal';
 import { TaskModal } from './components/TaskModal';
@@ -65,7 +65,7 @@ export function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  const openEntity = (type: string, id: string) => {
+  const openEntity = (type: string, _id: string) => {
     if (type === 'task') setCurrentNav('tasks');
     else if (type === 'doc') setCurrentNav('documentation');
     else if (type === 'component') setCurrentNav('components');

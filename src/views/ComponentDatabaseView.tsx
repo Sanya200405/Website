@@ -218,6 +218,34 @@ export const ComponentDatabaseView: React.FC<{
                 <label className="block font-semibold mb-1">Purpose / Role</label>
                 <input type="text" value={purpose} onChange={(e) => setPurpose(e.target.value)} className={`w-full p-2 rounded-xl border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50'}`} />
               </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold mb-1">Category</label>
+                  <select value={category} onChange={(e) => setCategory(e.target.value as ComponentCategory)} className={`w-full p-2 rounded-xl border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50'}`}>
+                    {['MCU', 'MOSFET', 'Gate Driver', 'Current Sensor', 'Voltage Regulator', 'Encoder', 'Capacitor', 'Resistor', 'Connector', 'Communication IC', 'Protection', 'Mechanical', 'Gearbox'].map(c => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-semibold mb-1">Status</label>
+                  <select value={status} onChange={(e) => setStatus(e.target.value as ComponentStatus)} className={`w-full p-2 rounded-xl border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50'}`}>
+                    {['Selected', 'Candidate', 'Rejected'].map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold mb-1">Schematic Section</label>
+                  <input type="text" value={schematicSection} onChange={(e) => setSchematicSection(e.target.value)} placeholder="e.g. Sheet 2 - Gate Drive" className={`w-full p-2 rounded-xl border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50'}`} />
+                </div>
+                <div>
+                  <label className="block font-semibold mb-1">PCB Location</label>
+                  <input type="text" value={pcbLocation} onChange={(e) => setPcbLocation(e.target.value)} placeholder="e.g. U1 / Top Layer" className={`w-full p-2 rounded-xl border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50'}`} />
+                </div>
+              </div>
               <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="block font-semibold mb-1">Voltage Rating</label>
@@ -231,6 +259,10 @@ export const ComponentDatabaseView: React.FC<{
                   <label className="block font-semibold mb-1">Unit Cost ($)</label>
                   <input type="number" step="0.01" value={costUsd} onChange={(e) => setCostUsd(Number(e.target.value))} className={`w-full p-2 rounded-xl border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50'}`} />
                 </div>
+              </div>
+              <div>
+                <label className="block font-semibold mb-1">Reason for Selection / Notes</label>
+                <input type="text" value={reasonForSelection} onChange={(e) => setReasonForSelection(e.target.value)} placeholder="e.g. Low RDS(on) and high dV/dt immunity" className={`w-full p-2 rounded-xl border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50'}`} />
               </div>
               <div className="flex justify-end gap-3 pt-2">
                 <button type="button" onClick={() => setShowAddModal(false)} className="px-4 py-2 rounded-xl border border-slate-800 text-slate-400">Cancel</button>

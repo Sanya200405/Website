@@ -1,4 +1,4 @@
-import {
+import type {
   User, Task, Phase, Milestone, TechnicalDoc, Component,
   HardwareRevision, FirmwareModule, ResearchEntry, ExperimentLog,
   Issue, DecisionRecord, Meeting, ProjectFile, ActivityLog
@@ -381,7 +381,7 @@ export const INITIAL_TASKS: Task[] = [
     assignedToName: 'Priya Patel',
     assignedToAvatar: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=150&auto=format&fit=crop&q=80',
     priority: 'Medium',
-    status: 'To Do',
+    status: 'Not Started',
     category: 'Firmware',
     startDate: '2026-08-10',
     deadline: '2026-08-20',

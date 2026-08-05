@@ -129,7 +129,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
 
         {/* Next Meeting */}
-        <div className={`p-3 rounded-2xl border ${isDark ? 'bg-slate-900/80 border-slate-800' : 'bg-white border-slate-200'}`}>
+        <div
+          onClick={onOpenNewMeeting}
+          className={`p-3 rounded-2xl border cursor-pointer transition-all hover:border-indigo-500/50 ${isDark ? 'bg-slate-900/80 border-slate-800' : 'bg-white border-slate-200'}`}
+        >
           <div className="flex items-center justify-between text-slate-400 mb-1">
             <span className="text-[10px] font-bold uppercase">Meeting</span>
             <CalendarIcon className="w-3.5 h-3.5 text-indigo-400" />
