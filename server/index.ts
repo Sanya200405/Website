@@ -44,7 +44,7 @@ initAutomatedBackups();
 initExternalBackupsScheduler();
 
 const app = express();
-const PORT = parseInt(process.env.PORT || '3001', 10);
+const PORT = parseInt(process.env.PORT || '10000', 10);
 const JWT_SECRET = process.env.JWT_SECRET || 'foc_drive_jwt_secret_key_2026';
 
 // Multer storage for documents, CSVs, PDFs, images

@@ -26,11 +26,11 @@ RUN mkdir -p /app/data /app/uploads /app/data/backups /app/data/external_backups
 
 # Production environment configuration
 ENV NODE_ENV=production
-ENV PORT=3001
+ENV PORT=10000
 ENV DATA_DIR=/app/data
 ENV UPLOADS_DIR=/app/uploads
 
-EXPOSE 3001
+EXPOSE 10000
 
 # Start the unified full-stack application
 CMD ["npm", "run", "start"]
