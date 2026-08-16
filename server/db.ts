@@ -37,9 +37,17 @@ if (!fs.existsSync(DB_PATH) && SEED_DB_PATH && fs.existsSync(SEED_DB_PATH)) {
 
 export const db = new Database(DB_PATH);
 
-// Enable foreign keys and WAL mode for reliability and concurrency
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+// Enable foreign keys and container-safe journal mode
+try {
+  db.pragma('journal_mode = DELETE');
+} catch (e: any) {
+  console.warn('Journal mode setting warning:', e?.message);
+}
+try {
+  db.pragma('foreign_keys = ON');
+} catch (e: any) {
+  console.warn('Foreign keys setting warning:', e?.message);
+}
 
 export function initDatabase() {
   db.exec(`
