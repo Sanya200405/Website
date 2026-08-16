@@ -1,53 +1,40 @@
 # ==========================================
-# ProjectDrive Production Multi-Stage Dockerfile
+# ProjectDrive Production Cloud Container
 # Full-Stack Node.js + SQLite + Persistent Storage
 # ==========================================
+FROM node:20-bookworm-slim
 
-# Stage 1: Build the React Frontend SPA
-FROM node:20-bookworm-slim AS builder
 WORKDIR /app
 
-# Copy dependency definitions
+# Install build tools for native SQLite C++ bindings and curl for healthchecks
+RUN apt-get update && apt-get install -y python3 make g++ curl && rm -rf /var/lib/apt/lists/*
+
+# Copy package files
 COPY package.json package-lock.json ./
 
-# Install all dependencies (including devDependencies for build)
-RUN npm ci
+# Install dependencies (with clean install)
+RUN npm install
 
-# Copy full source tree and build production static bundle
+# Copy application source code and seed database
 COPY . .
+
+# Build production React frontend SPA to dist/
 RUN npm run build
 
-# Stage 2: Production Runtime
-FROM node:20-bookworm-slim AS runner
-WORKDIR /app
+# Ensure persistent mount directories exist
+RUN mkdir -p /app/data /app/uploads /app/data/backups /app/data/external_backups
 
-# Install system utilities needed for native compilation if required
-RUN apt-get update && apt-get install -y python3 make g++ openssh-client curl && rm -rf /var/lib/apt/lists/*
-
+# Production environment configuration
 ENV NODE_ENV=production
 ENV PORT=3001
 ENV DATA_DIR=/app/data
 ENV UPLOADS_DIR=/app/uploads
 
-# Copy package definitions and install production dependencies
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
-
-# Copy compiled frontend from builder
-COPY --from=builder /app/dist ./dist
-
-# Copy server codebase and seed database
-COPY server ./server
-
-# Ensure persistent mount directories exist
-RUN mkdir -p /app/data /app/uploads /app/data/backups /app/data/external_backups
-
-# Expose production port
 EXPOSE 3001
 
 # Healthcheck
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD curl -f http://localhost:3001/api/auth/status || exit 1
 
-# Start the unified backend & static frontend server
+# Start the unified full-stack application
 CMD ["npm", "run", "start"]
