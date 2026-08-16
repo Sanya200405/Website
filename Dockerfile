@@ -32,9 +32,5 @@ ENV UPLOADS_DIR=/app/uploads
 
 EXPOSE 3001
 
-# Healthcheck
-HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD curl -f http://localhost:3001/api/auth/status || exit 1
-
 # Start the unified full-stack application
 CMD ["npm", "run", "start"]
