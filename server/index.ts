@@ -38,10 +38,8 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Initialize DB schema, automated local snapshots & external disaster recovery scheduler
+// Initialize DB schema synchronously
 initDatabase();
-initAutomatedBackups();
-initExternalBackupsScheduler();
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '10000', 10);
@@ -2538,4 +2536,8 @@ if (fs.existsSync(DIST_DIR)) {
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Backend server running on http://0.0.0.0:${PORT}`);
+  setTimeout(() => {
+    try { initAutomatedBackups(); } catch (e) { console.error('Automated backups init error:', e); }
+    try { initExternalBackupsScheduler(); } catch (e) { console.error('External backups init error:', e); }
+  }, 2000);
 });
