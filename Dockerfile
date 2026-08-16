@@ -2,7 +2,7 @@
 # ProjectDrive Production Cloud Container
 # Full-Stack Node.js + SQLite + Persistent Storage
 # ==========================================
-FROM node:20-bookworm-slim
+FROM node:22-bookworm-slim
 
 WORKDIR /app
 
