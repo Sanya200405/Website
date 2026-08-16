@@ -1,0 +1,26 @@
+# Ignore local node_modules (prevents Windows .node C++ binary corruption in Linux)
+node_modules
+
+# Ignore local build outputs
+dist
+dist-ssr
+
+# Ignore git and temporary directories
+.git
+.gitignore
+scratch
+.netlify
+
+# Ignore local database WAL/SHM files and local uploads
+data
+uploads
+*.db
+*.db-wal
+*.db-shm
+
+# Ignore logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*

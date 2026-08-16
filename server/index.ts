@@ -42,7 +42,7 @@ const __dirname = path.dirname(__filename);
 initDatabase();
 
 const app = express();
-const PORT = parseInt(process.env.PORT || '10000', 10);
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
 const JWT_SECRET = process.env.JWT_SECRET || 'foc_drive_jwt_secret_key_2026';
 
 // Multer storage for documents, CSVs, PDFs, images

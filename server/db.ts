@@ -18,6 +18,8 @@ const SEED_DB_PATH = path.resolve(__dirname, 'project_seed.db');
 if (!fs.existsSync(DB_PATH) && fs.existsSync(SEED_DB_PATH)) {
   try {
     fs.copyFileSync(SEED_DB_PATH, DB_PATH);
+    if (fs.existsSync(DB_PATH + '-wal')) try { fs.unlinkSync(DB_PATH + '-wal'); } catch (_) {}
+    if (fs.existsSync(DB_PATH + '-shm')) try { fs.unlinkSync(DB_PATH + '-shm'); } catch (_) {}
     console.log(`Initialized database from seed database: ${DB_PATH}`);
   } catch (err: any) {
     console.error('Failed to copy seed database:', err.message);
