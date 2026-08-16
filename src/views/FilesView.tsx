@@ -1,131 +1,201 @@
 import React, { useState } from 'react';
-import { FolderGit2, Plus, Download, FileText } from 'lucide-react';
+import {
+  FolderGit2,
+  Plus,
+  Search,
+  Download,
+  Trash2,
+  FileText,
+  FileCode,
+  FileSpreadsheet,
+  FileBox,
+} from 'lucide-react';
 import type { AppState } from '../services/store';
-import type { ProjectFile } from '../types';
 
-export const FilesView: React.FC<{
+interface FilesViewProps {
   state: AppState;
-  onAddFile: (file: Omit<ProjectFile, 'id' | 'uploadedDate'>) => void;
-}> = ({ state, onAddFile }) => {
+  onOpenUploadDoc: () => void;
+  onDeleteDocument: (id: string) => void;
+}
+
+export const FilesView: React.FC<FilesViewProps> = ({
+  state,
+  onOpenUploadDoc,
+  onDeleteDocument,
+}) => {
   const isDark = state.theme === 'dark';
-  const [showAddModal, setShowAddModal] = useState(false);
+  const { documents } = state;
+  const [searchQuery, setSearchQuery] = useState('');
+  const [typeFilter, setTypeFilter] = useState('all');
 
-  const [name, setName] = useState('');
-  const [category, setCategory] = useState<ProjectFile['category']>('Schematics');
-  const [size, setSize] = useState('2.4 MB');
-  const [url, setUrl] = useState('');
+  const filteredDocs = documents.filter((d) => {
+    const matchesSearch =
+      d.file_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (d.description && d.description.toLowerCase().includes(searchQuery.toLowerCase()));
+    const matchesType = typeFilter === 'all' || d.type === typeFilter;
+    return matchesSearch && matchesType;
+  });
 
-  const handleCreate = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim()) return;
-
-    onAddFile({
-      name,
-      category,
-      size,
-      uploadedBy: state.currentUser.name,
-      url: url || '#',
-      tags: [category]
-    });
-
-    setName('');
-    setUrl('');
-    setShowAddModal(false);
+  const getFileIcon = (type: string) => {
+    switch (type) {
+      case 'Datasheet':
+      case 'Test Report':
+        return <FileText className="w-5 h-5 text-amber-400" />;
+      case 'Firmware':
+      case 'Schematic':
+        return <FileCode className="w-5 h-5 text-sky-400" />;
+      case 'CAD Model':
+      case 'PCB Layout':
+        return <FileBox className="w-5 h-5 text-purple-400" />;
+      default:
+        return <FileSpreadsheet className="w-5 h-5 text-cyan-400" />;
+    }
   };
 
   return (
     <div className="space-y-6 pb-12">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-bold tracking-tight flex items-center gap-2">
-            <FolderGit2 className="w-5 h-5 text-cyan-400" />
-            <span>Central Project File Vault</span>
-          </h2>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Datasheets, Altium schematics, PCB Gerber files, SolidWorks CAD STEP models, and test reports.
-          </p>
+      {/* Header */}
+      <div className={`p-6 rounded-2xl border transition-all ${
+        isDark ? 'bg-slate-900/90 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-900'
+      }`}>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <FolderGit2 className="w-5 h-5 text-cyan-400" />
+              <h1 className="text-xl font-bold text-slate-100">Documents & Project Files</h1>
+            </div>
+            <p className="text-xs text-slate-400 max-w-xl">
+              Repository for motor datasheets, schematics, PCB Gerbers, CAD models, and test reports.
+            </p>
+          </div>
+          <button
+            onClick={onOpenUploadDoc}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-cyan-600 hover:bg-cyan-500 text-white shadow-sm transition-all"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Upload Document</span>
+          </button>
         </div>
-
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white text-xs font-semibold shadow-md shadow-cyan-500/20"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Add Project File</span>
-        </button>
       </div>
 
-      <div className={`p-5 rounded-2xl border ${isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'}`}>
-        <div className="space-y-3">
-          {state.files.map(file => (
+      {/* Filters */}
+      <div className={`p-4 rounded-xl border flex flex-col sm:flex-row items-center gap-3 ${
+        isDark ? 'bg-slate-900/80 border-slate-800' : 'bg-white border-slate-200'
+      }`}>
+        <div className="relative flex-1 w-full">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+          <input
+            type="text"
+            placeholder="Search documents..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className={`w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border focus:outline-none focus:ring-1 focus:ring-cyan-500 ${
+              isDark ? 'bg-slate-950 border-slate-800 text-slate-100' : 'bg-slate-50 border-slate-200 text-slate-900'
+            }`}
+          />
+        </div>
+
+        <select
+          value={typeFilter}
+          onChange={(e) => setTypeFilter(e.target.value)}
+          className={`px-3 py-1.5 text-xs rounded-lg border focus:outline-none w-full sm:w-auto ${
+            isDark ? 'bg-slate-950 border-slate-800 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-700'
+          }`}
+        >
+          <option value="all">All Types</option>
+          <option value="Datasheet">Datasheet</option>
+          <option value="Schematic">Schematic</option>
+          <option value="PCB Layout">PCB Layout</option>
+          <option value="Firmware">Firmware</option>
+          <option value="CAD Model">CAD Model</option>
+          <option value="Test Report">Test Report</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+
+      {filteredDocs.length === 0 ? (
+        <div className={`p-12 rounded-2xl border text-center space-y-4 ${
+          isDark ? 'bg-slate-900/40 border-slate-800' : 'bg-white border-slate-200'
+        }`}>
+          <div className="w-12 h-12 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 flex items-center justify-center mx-auto">
+            <FolderGit2 className="w-6 h-6" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-base font-bold text-slate-100">
+              {documents.length === 0 ? 'No documents uploaded yet' : 'No matching documents found'}
+            </h3>
+            <p className="text-xs text-slate-400 max-w-md mx-auto">
+              {documents.length === 0
+                ? 'Upload motor datasheets, gate driver schematics, CAD step files, or test reports.'
+                : 'Try adjusting your search terms.'}
+            </p>
+          </div>
+          {documents.length === 0 && (
+            <button
+              onClick={onOpenUploadDoc}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-cyan-600 hover:bg-cyan-500 text-white shadow-sm transition-all"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Upload First Document</span>
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredDocs.map((doc) => (
             <div
-              key={file.id}
-              className={`p-3.5 rounded-xl border flex items-center justify-between text-xs ${
-                isDark ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
+              key={doc.id}
+              className={`p-5 rounded-2xl border flex flex-col justify-between transition-all ${
+                isDark ? 'bg-slate-900/80 border-slate-800 hover:border-slate-700' : 'bg-white border-slate-200'
               }`}
             >
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-cyan-500/10 text-cyan-400">
-                  <FileText className="w-4 h-4" />
+              <div>
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 flex-shrink-0">
+                    {getFileIcon(doc.type)}
+                  </div>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-800 text-slate-300 border border-slate-700">
+                    {doc.type}
+                  </span>
                 </div>
-                <div>
-                  <h4 className="font-bold text-slate-100">{file.name}</h4>
-                  <p className="text-[10px] text-slate-400 mt-0.5">
-                    {file.category} • {file.size} • Uploaded by {file.uploadedBy} on {file.uploadedDate}
+
+                <h3 className="text-xs font-bold text-slate-100 break-words mb-1">
+                  {doc.file_name}
+                </h3>
+
+                {doc.description && (
+                  <p className="text-[11px] text-slate-400 line-clamp-2 mb-3">
+                    {doc.description}
                   </p>
-                </div>
+                )}
               </div>
 
-              {file.url && (
-                <a
-                  href={file.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-400 text-xs font-semibold"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Download</span>
-                </a>
-              )}
+              <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs">
+                <span className="text-[10px] text-slate-500 font-mono">
+                  {doc.file_size || '—'}
+                </span>
+                <div className="flex items-center gap-2">
+                  <a
+                    href={doc.file_url}
+                    download={doc.file_name}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="p-1.5 text-slate-400 hover:text-cyan-400 transition-colors"
+                    title="Download"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                  </a>
+                  <button
+                    onClick={() => onDeleteDocument(doc.id)}
+                    className="p-1.5 text-slate-400 hover:text-rose-400 transition-colors"
+                    title="Delete"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
             </div>
           ))}
-        </div>
-      </div>
-
-      {/* Add File Modal */}
-      {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
-          <div className={`w-full max-w-xl rounded-2xl border p-6 ${isDark ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white'}`}>
-            <h3 className="text-sm font-bold mb-4">Add File to Central Vault</h3>
-            <form onSubmit={handleCreate} className="space-y-3 text-xs">
-              <div>
-                <label className="block font-semibold mb-1">File Name *</label>
-                <input type="text" required value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. FOC_Inverter_Rev1_Schematic.pdf" className={`w-full p-2 rounded-xl border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50'}`} />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold mb-1">Category</label>
-                  <select value={category} onChange={(e) => setCategory(e.target.value as any)} className={`w-full p-2 rounded-xl border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50'}`}>
-                    {['Datasheets', 'Schematics', 'PCB', 'CAD', 'Firmware', 'Research Papers', 'Test Results', 'Images', 'Meeting Documents', 'Reports'].map(c => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block font-semibold mb-1">File Size</label>
-                  <input type="text" value={size} onChange={(e) => setSize(e.target.value)} placeholder="e.g. 4.2 MB" className={`w-full p-2 rounded-xl border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50'}`} />
-                </div>
-              </div>
-              <div>
-                <label className="block font-semibold mb-1">Download URL / Storage Link</label>
-                <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://..." className={`w-full p-2 rounded-xl border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50'}`} />
-              </div>
-              <div className="flex justify-end gap-3 pt-2">
-                <button type="button" onClick={() => setShowAddModal(false)} className="px-4 py-2 rounded-xl border border-slate-800 text-slate-400">Cancel</button>
-                <button type="submit" className="px-5 py-2 rounded-xl bg-cyan-500 text-slate-950 font-bold">Add File</button>
-              </div>
-            </form>
-          </div>
         </div>
       )}
     </div>

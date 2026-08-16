@@ -1,0 +1,27 @@
+# ==========================================
+# Render Blueprint for ProjectDrive 24/7 Cloud
+# ==========================================
+services:
+  - type: web
+    name: projectdrive
+    runtime: docker
+    plan: free # or starter with persistent disk
+    region: oregon
+    branch: main
+    autoDeploy: true
+    healthCheckPath: /api/auth/status
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+      - key: DATA_DIR
+        value: /var/data
+      - key: UPLOADS_DIR
+        value: /var/data/uploads
+      - key: JWT_SECRET
+        generateValue: true
+    disk:
+      name: projectdrive-storage
+      mountPath: /var/data
+      sizeGB: 1

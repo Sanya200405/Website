@@ -1,323 +1,708 @@
-import { useState, useEffect } from 'react';
-import type {
-  User, Task, Phase, Milestone, TechnicalDoc, Component,
-  HardwareRevision, FirmwareModule, ResearchEntry, ExperimentLog,
-  Issue, DecisionRecord, Meeting, ProjectFile, ActivityLog, TaskStatus
-} from '../types';
+import { useState, useEffect, useCallback } from 'react';
 import {
-  INITIAL_USERS, INITIAL_PHASES, INITIAL_MILESTONES, INITIAL_TASKS,
-  INITIAL_TECHNICAL_DOCS, INITIAL_COMPONENTS, INITIAL_HARDWARE_REVISIONS,
-  INITIAL_FIRMWARE_MODULES, INITIAL_RESEARCH, INITIAL_EXPERIMENTS,
-  INITIAL_ISSUES, INITIAL_DECISIONS, INITIAL_MEETINGS, INITIAL_FILES,
-  INITIAL_ACTIVITIES
-} from './initialData';
+  api,
+  getStoredToken,
+  setStoredToken,
+  type ProjectStats,
+  type ProjectInfo,
+  type MotorParameters,
+  type TeamMember,
+  type MilestoneItem,
+  type TaskItem,
+  type TestItem,
+  type IssueItem,
+  type DocumentItem,
+  type ResearchPaper,
+  type LearningResource,
+  type EngineeringNote,
+  type ReportSection,
+  type ActivityItem,
+  type AuthStatus,
+  type StorageInfo,
+  type BackupMetadata,
+  type BackupStatusInfo,
+  type ExternalBackupRecord,
+  type ExternalBackupStatus,
+  type TrashItem,
+  type SimulationModel,
+  type GitHubRepoData,
+  type GitHubCommitData,
+} from './api';
 
-const STORAGE_KEY = 'foc_drive_project_state_v1';
+const THEME_KEY = 'foc_drive_theme';
+const USER_KEY = 'foc_drive_current_user';
 
 export interface AppState {
   theme: 'dark' | 'light';
-  currentUser: User;
-  users: User[];
-  phases: Phase[];
-  milestones: Milestone[];
-  tasks: Task[];
-  docs: TechnicalDoc[];
-  components: Component[];
-  hardwareRevisions: HardwareRevision[];
-  firmwareModules: FirmwareModule[];
-  researchEntries: ResearchEntry[];
-  experiments: ExperimentLog[];
-  issues: Issue[];
-  decisions: DecisionRecord[];
-  meetings: Meeting[];
-  files: ProjectFile[];
-  activities: ActivityLog[];
+  currentUser: TeamMember | null;
+  authStatus: AuthStatus | null;
+  project: ProjectInfo;
+  motorParameters: MotorParameters | null;
+  stats: ProjectStats;
+  team: TeamMember[];
+  milestones: MilestoneItem[];
+  tasks: TaskItem[];
+  tests: TestItem[];
+  simulations: SimulationModel[];
+  gitHubRepo: GitHubRepoData | null;
+  gitHubCommits: GitHubCommitData[];
+  issues: IssueItem[];
+  documents: DocumentItem[];
+  researchPapers: ResearchPaper[];
+  learningResources: LearningResource[];
+  engineeringNotes: EngineeringNote[];
+  reportSections: ReportSection[];
+  activities: ActivityItem[];
+  trashItems: TrashItem[];
+  adminUsers: TeamMember[];
+  adminStorage: StorageInfo | null;
+  adminBackups: BackupMetadata[];
+  adminBackupStatus: BackupStatusInfo | null;
+  externalBackupStatus: ExternalBackupStatus | null;
+  externalBackups: ExternalBackupRecord[];
+  isLoading: boolean;
+  error: string | null;
 }
 
-export function loadInitialState(): AppState {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      return { ...parsed };
-    }
-  } catch (e) {
-    console.error('Failed to load state from localStorage', e);
-  }
-  return {
-    theme: 'dark',
-    currentUser: INITIAL_USERS[0],
-    users: INITIAL_USERS,
-    phases: INITIAL_PHASES,
-    milestones: INITIAL_MILESTONES,
-    tasks: INITIAL_TASKS,
-    docs: INITIAL_TECHNICAL_DOCS,
-    components: INITIAL_COMPONENTS,
-    hardwareRevisions: INITIAL_HARDWARE_REVISIONS,
-    firmwareModules: INITIAL_FIRMWARE_MODULES,
-    researchEntries: INITIAL_RESEARCH,
-    experiments: INITIAL_EXPERIMENTS,
-    issues: INITIAL_ISSUES,
-    decisions: INITIAL_DECISIONS,
-    meetings: INITIAL_MEETINGS,
-    files: INITIAL_FILES,
-    activities: INITIAL_ACTIVITIES,
-  };
-}
+const defaultStats: ProjectStats = {
+  overallProgress: 0,
+  totalTasks: 0,
+  completedTasks: 0,
+  activeTasks: 0,
+  pendingTasks: 0,
+  blockedTasks: 0,
+  totalMilestones: 0,
+  completedMilestones: 0,
+  openIssues: 0,
+  completedTests: 0,
+  totalTests: 0,
+  totalTeamMembers: 0,
+  totalDocuments: 0,
+  totalResearchPapers: 0,
+  totalLearningResources: 0,
+  totalEngineeringNotes: 0,
+  totalReportSections: 0,
+};
+
+const defaultProject: ProjectInfo = {
+  id: 'proj_foc_main',
+  name: 'FOC Drive Project',
+  description: 'Development of an FOC Drive for BLDC Motor with Planetary Gear Reduction',
+  status: 'Planning',
+  start_date: new Date().toISOString().split('T')[0],
+  target_date: '',
+  created_at: new Date().toISOString(),
+};
 
 export function useProjectStore() {
-  const [state, setState] = useState<AppState>(loadInitialState);
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    return (localStorage.getItem(THEME_KEY) as 'dark' | 'light') || 'dark';
+  });
+
+  const [currentUser, setCurrentUser] = useState<TeamMember | null>(() => {
+    try {
+      const saved = localStorage.getItem(USER_KEY);
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
+  const [project, setProject] = useState<ProjectInfo>(defaultProject);
+  const [motorParameters, setMotorParameters] = useState<MotorParameters | null>(null);
+  const [stats, setStats] = useState<ProjectStats>(defaultStats);
+  const [team, setTeam] = useState<TeamMember[]>([]);
+  const [milestones, setMilestones] = useState<MilestoneItem[]>([]);
+  const [tasks, setTasks] = useState<TaskItem[]>([]);
+  const [tests, setTests] = useState<TestItem[]>([]);
+  const [simulations, setSimulations] = useState<SimulationModel[]>([]);
+  const [gitHubRepo, setGitHubRepo] = useState<GitHubRepoData | null>(null);
+  const [gitHubCommits, setGitHubCommits] = useState<GitHubCommitData[]>([]);
+  const [issues, setIssues] = useState<IssueItem[]>([]);
+  const [documents, setDocuments] = useState<DocumentItem[]>([]);
+  const [researchPapers, setResearchPapers] = useState<ResearchPaper[]>([]);
+  const [learningResources, setLearningResources] = useState<LearningResource[]>([]);
+  const [engineeringNotes, setEngineeringNotes] = useState<EngineeringNote[]>([]);
+  const [reportSections, setReportSections] = useState<ReportSection[]>([]);
+  const [activities, setActivities] = useState<ActivityItem[]>([]);
+  const [trashItems, setTrashItems] = useState<TrashItem[]>([]);
+  const [adminUsers, setAdminUsers] = useState<TeamMember[]>([]);
+  const [adminStorage, setAdminStorage] = useState<StorageInfo | null>(null);
+  const [adminBackups, setAdminBackups] = useState<BackupMetadata[]>([]);
+  const [adminBackupStatus, setAdminBackupStatus] = useState<BackupStatusInfo | null>(null);
+  const [externalBackupStatus, setExternalBackupStatus] = useState<ExternalBackupStatus | null>(null);
+  const [externalBackups, setExternalBackups] = useState<ExternalBackupRecord[]>([]);
+
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchAllData = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      // Verify token / get profile if token exists
+      const token = getStoredToken();
+      if (token) {
+        api.getMe()
+          .then((user) => {
+            setCurrentUser(user);
+            localStorage.setItem(USER_KEY, JSON.stringify(user));
+          })
+          .catch(() => {
+            setStoredToken(null);
+            setCurrentUser(null);
+            localStorage.removeItem(USER_KEY);
+          });
+      }
+
+      const [
+        authStatusData,
+        statsData,
+        projectData,
+        motorData,
+        teamData,
+        milestonesData,
+        tasksData,
+        testsData,
+        simulationsData,
+        githubRepoData,
+        githubCommitsData,
+        issuesData,
+        docsData,
+        papersData,
+        resourcesData,
+        notesData,
+        sectionsData,
+        activitiesData,
+      ] = await Promise.all([
+        api.getAuthStatus().catch(() => ({ hasAdmin: false, userCount: 0 })),
+        api.getStats().catch(() => defaultStats),
+        api.getProject().catch(() => defaultProject),
+        api.getMotorParameters().catch(() => null),
+        api.getTeam().catch(() => []),
+        api.getMilestones().catch(() => []),
+        api.getTasks().catch(() => []),
+        api.getTests().catch(() => []),
+        api.getSimulations().catch(() => []),
+        api.getGitHubRepo().catch(() => null),
+        api.getGitHubCommits().catch(() => []),
+        api.getIssues().catch(() => []),
+        api.getDocuments().catch(() => []),
+        api.getResearchPapers().catch(() => []),
+        api.getLearningResources().catch(() => []),
+        api.getEngineeringNotes().catch(() => []),
+        api.getReportSections().catch(() => []),
+        api.getActivities().catch(() => []),
+      ]);
+
+      setAuthStatus(authStatusData);
+      setStats(statsData);
+      setProject(projectData);
+      setMotorParameters(motorData);
+      setTeam(teamData);
+      setMilestones(milestonesData);
+      setTasks(tasksData);
+      setTests(testsData);
+      setSimulations(simulationsData);
+      setGitHubRepo(githubRepoData);
+      setGitHubCommits(githubCommitsData);
+      setIssues(issuesData);
+      setDocuments(docsData);
+      setResearchPapers(papersData);
+      setLearningResources(resourcesData);
+      setEngineeringNotes(notesData);
+      setReportSections(sectionsData);
+      setActivities(activitiesData);
+
+      // Load Trash items if authenticated
+      if (token) {
+        api.getTrash().then((tData) => setTrashItems(tData)).catch(() => setTrashItems([]));
+      }
+
+      // If user is Admin, load admin datasets & backups
+      if (currentUser?.role === 'admin') {
+        Promise.all([
+          api.getAdminUsers().catch(() => []),
+          api.adminGetStorage().catch(() => null),
+          api.getAdminBackups().catch(() => []),
+          api.getAdminBackupStatus().catch(() => null),
+          api.getExternalBackupStatus().catch(() => null),
+          api.getExternalBackupHistory().catch(() => []),
+        ]).then(([uData, sData, bData, bsData, ebStatus, ebHist]) => {
+          setAdminUsers(uData);
+          setAdminStorage(sData);
+          setAdminBackups(bData);
+          setAdminBackupStatus(bsData);
+          setExternalBackupStatus(ebStatus);
+          setExternalBackups(ebHist);
+        });
+      }
+    } catch (err: any) {
+      console.error('Failed to load project state', err);
+      setError(err.message || 'Failed to connect to backend server');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [currentUser?.role]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch (e) {
-      console.error('Failed to save state to localStorage', e);
-    }
-  }, [state]);
+    fetchAllData();
+  }, [fetchAllData]);
 
   const toggleTheme = () => {
-    setState(prev => ({
-      ...prev,
-      theme: prev.theme === 'dark' ? 'light' : 'dark'
-    }));
+    setTheme((prev) => {
+      const next = prev === 'dark' ? 'light' : 'dark';
+      localStorage.setItem(THEME_KEY, next);
+      return next;
+    });
   };
 
-  const setCurrentUser = (user: User) => {
-    setState(prev => ({ ...prev, currentUser: user }));
+  const login = async (credentials: { email: string; password?: string }) => {
+    const result = await api.login(credentials);
+    setStoredToken(result.token);
+    setCurrentUser(result.user);
+    localStorage.setItem(USER_KEY, JSON.stringify(result.user));
+    await fetchAllData();
+    return result;
   };
 
-  const addTask = (task: Omit<Task, 'id' | 'createdDate' | 'lastUpdated'>) => {
-    const newTask: Task = {
-      ...task,
-      id: 't_' + Date.now(),
-      createdDate: new Date().toISOString().split('T')[0],
-      lastUpdated: new Date().toISOString().split('T')[0],
-    };
-    const newActivity: ActivityLog = {
-      id: 'act_' + Date.now(),
-      personName: state.currentUser.name,
-      personAvatar: state.currentUser.avatar,
-      action: 'created task',
-      targetName: newTask.title,
-      category: 'Tasks',
-      timestamp: 'Just now'
-    };
-    setState(prev => ({
-      ...prev,
-      tasks: [newTask, ...prev.tasks],
-      activities: [newActivity, ...prev.activities]
-    }));
+  const register = async (data: { name: string; email: string; password?: string; role?: 'admin' | 'member'; bio?: string }) => {
+    const result = await api.register(data);
+    setStoredToken(result.token);
+    setCurrentUser(result.user);
+    localStorage.setItem(USER_KEY, JSON.stringify(result.user));
+    await fetchAllData();
+    return result;
+  };
+
+  const logout = () => {
+    setStoredToken(null);
+    setCurrentUser(null);
+    localStorage.removeItem(USER_KEY);
+    setTrashItems([]);
+    setAdminUsers([]);
+    setAdminStorage(null);
+    setAdminBackups([]);
+    setAdminBackupStatus(null);
+  };
+
+  const currentUserName = currentUser?.name || 'User';
+
+  // --- Motor Parameters ---
+  const updateMotorParameters = async (data: Partial<MotorParameters>) => {
+    const updated = await api.updateMotorParameters(data);
+    setMotorParameters(updated);
+    await fetchAllData();
+    return updated;
+  };
+
+  // --- Tasks ---
+  const addTask = async (data: Partial<TaskItem>) => {
+    const newTask = await api.addTask({ ...data, user_name: currentUserName });
+    await fetchAllData();
     return newTask;
   };
 
-  const updateTaskStatus = (taskId: string, newStatus: TaskStatus) => {
-    setState(prev => {
-      const task = prev.tasks.find(t => t.id === taskId);
-      if (!task) return prev;
-      const updatedTasks = prev.tasks.map(t =>
-        t.id === taskId ? { ...t, status: newStatus, lastUpdated: new Date().toISOString().split('T')[0] } : t
-      );
-      const newActivity: ActivityLog = {
-        id: 'act_' + Date.now(),
-        personName: prev.currentUser.name,
-        personAvatar: prev.currentUser.avatar,
-        action: `updated task to ${newStatus}`,
-        targetName: task.title,
-        category: 'Tasks',
-        timestamp: 'Just now'
-      };
-      return {
-        ...prev,
-        tasks: updatedTasks,
-        activities: [newActivity, ...prev.activities]
-      };
-    });
+  const updateTask = async (id: string, data: Partial<TaskItem>) => {
+    const updated = await api.updateTask(id, { ...data, user_name: currentUserName });
+    await fetchAllData();
+    return updated;
   };
 
-  const updateTask = (updatedTask: Task) => {
-    setState(prev => ({
-      ...prev,
-      tasks: prev.tasks.map(t => t.id === updatedTask.id ? { ...updatedTask, lastUpdated: new Date().toISOString().split('T')[0] } : t)
-    }));
+  const deleteTask = async (id: string) => {
+    await api.deleteTask(id);
+    await fetchAllData();
   };
 
-  const deleteTask = (taskId: string) => {
-    setState(prev => ({
-      ...prev,
-      tasks: prev.tasks.filter(t => t.id !== taskId)
-    }));
+  // --- Milestones ---
+  const addMilestone = async (data: Partial<MilestoneItem>) => {
+    const newMs = await api.addMilestone({ ...data, user_name: currentUserName });
+    await fetchAllData();
+    return newMs;
   };
 
-  const addDoc = (doc: Omit<TechnicalDoc, 'id' | 'lastUpdated'>) => {
-    const newDoc: TechnicalDoc = {
-      ...doc,
-      id: 'd_' + Date.now(),
-      lastUpdated: new Date().toISOString().split('T')[0]
-    };
-    const newActivity: ActivityLog = {
-      id: 'act_' + Date.now(),
-      personName: state.currentUser.name,
-      personAvatar: state.currentUser.avatar,
-      action: 'published doc',
-      targetName: newDoc.title,
-      category: 'Documentation',
-      timestamp: 'Just now'
-    };
-    setState(prev => ({
-      ...prev,
-      docs: [newDoc, ...prev.docs],
-      activities: [newActivity, ...prev.activities]
-    }));
+  const updateMilestone = async (id: string, data: Partial<MilestoneItem>) => {
+    const updated = await api.updateMilestone(id, { ...data, user_name: currentUserName });
+    await fetchAllData();
+    return updated;
   };
 
-  const addComponent = (comp: Omit<Component, 'id'>) => {
-    const newComp: Component = { ...comp, id: 'c_' + Date.now() };
-    setState(prev => ({ ...prev, components: [...prev.components, newComp] }));
+  const deleteMilestone = async (id: string) => {
+    await api.deleteMilestone(id);
+    await fetchAllData();
   };
 
-  const addExperiment = (exp: Omit<ExperimentLog, 'id'>) => {
-    const newExp: ExperimentLog = { ...exp, id: 'e_' + Date.now() };
-    const newActivity: ActivityLog = {
-      id: 'act_' + Date.now(),
-      personName: state.currentUser.name,
-      personAvatar: state.currentUser.avatar,
-      action: 'recorded experiment',
-      targetName: newExp.title,
-      category: 'Experiments',
-      timestamp: 'Just now'
-    };
-    setState(prev => ({
-      ...prev,
-      experiments: [newExp, ...prev.experiments],
-      activities: [newActivity, ...prev.activities]
-    }));
+  // --- Team Members ---
+  const addTeamMember = async (data: Partial<TeamMember> & { user_name?: string; password?: string }) => {
+    const newMember = await api.addTeamMember(data);
+    await fetchAllData();
+    return newMember;
   };
 
-  const addIssue = (issue: Omit<Issue, 'id' | 'dateDiscovered'>) => {
-    const newIssue: Issue = {
-      ...issue,
-      id: 'iss_' + Date.now(),
-      dateDiscovered: new Date().toISOString().split('T')[0]
-    };
-    setState(prev => ({ ...prev, issues: [newIssue, ...prev.issues] }));
+  const updateTeamMember = async (id: string, data: Partial<TeamMember> & { user_name?: string }) => {
+    const updated = await api.updateTeamMember(id, data);
+    await fetchAllData();
+    return updated;
   };
 
-  const addDecision = (decision: Omit<DecisionRecord, 'id' | 'date'>) => {
-    const newDec: DecisionRecord = {
-      ...decision,
-      id: 'dec_' + Date.now(),
-      date: new Date().toISOString().split('T')[0]
-    };
-    setState(prev => ({ ...prev, decisions: [newDec, ...prev.decisions] }));
+  const deleteTeamMember = async (id: string) => {
+    await api.deleteTeamMember(id);
+    await fetchAllData();
   };
 
-  const addMeeting = (meeting: Omit<Meeting, 'id'>) => {
-    const newM: Meeting = { ...meeting, id: 'm_' + Date.now() };
-    const newActivity: ActivityLog = {
-      id: 'act_' + Date.now(),
-      personName: state.currentUser.name,
-      personAvatar: state.currentUser.avatar,
-      action: 'scheduled meeting',
-      targetName: newM.title,
-      category: 'Meetings',
-      timestamp: 'Just now'
-    };
-    setState(prev => ({
-      ...prev,
-      meetings: [newM, ...prev.meetings],
-      activities: [newActivity, ...prev.activities]
-    }));
+  // --- Tests / Experiments ---
+  const addTest = async (data: Partial<TestItem>) => {
+    const newTest = await api.addTest({ ...data, user_name: currentUserName });
+    await fetchAllData();
+    return newTest;
   };
 
-  const convertActionItemToTask = (meetingId: string, actionItemId: string, assignedToName: string, title: string) => {
-    const assignedUser = state.users.find(u => u.name === assignedToName) || state.currentUser;
-    const newTask = addTask({
-      title: `[Meeting Action Item] ${title}`,
-      description: `Action item generated from meeting: ${title}`,
-      assignedToId: assignedUser.id,
-      assignedToName: assignedUser.name,
-      assignedToAvatar: assignedUser.avatar,
-      priority: 'High',
-      status: 'Not Started',
-      category: 'Management',
-      startDate: new Date().toISOString().split('T')[0],
-      deadline: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
-      estimatedEffortHours: 4,
-      actualEffortHours: 0,
-      checklist: [],
-      comments: [],
-      dependencies: [],
-      createdBy: state.currentUser.name,
-      tags: ['ActionItem', 'Meeting']
-    });
-
-    setState(prev => ({
-      ...prev,
-      meetings: prev.meetings.map(m => {
-        if (m.id !== meetingId) return m;
-        return {
-          ...m,
-          actionItems: m.actionItems.map(ai => ai.id === actionItemId ? { ...ai, convertedToTaskId: newTask.id } : ai)
-        };
-      })
-    }));
+  const uploadTestCsv = async (formData: FormData) => {
+    formData.append('user_name', currentUserName);
+    const newTest = await api.uploadTestCsv(formData);
+    await fetchAllData();
+    return newTest;
   };
 
-  const addPhase = (phase: Omit<Phase, 'id'>) => {
-    const newPhase: Phase = { ...phase, id: 'p_' + Date.now() };
-    setState(prev => ({ ...prev, phases: [...prev.phases, newPhase] }));
+  const deleteTest = async (id: string) => {
+    await api.deleteTest(id);
+    await fetchAllData();
   };
 
-  const updatePhaseProgress = (phaseId: string, progressPercentage: number) => {
-    setState(prev => ({
-      ...prev,
-      phases: prev.phases.map(p => p.id === phaseId ? { ...p, progressPercentage } : p)
-    }));
+  // --- Simulink & Simulation Models ---
+  const addSimulation = async (data: Partial<SimulationModel> & { linked_test_ids?: string[] }) => {
+    const newSim = await api.addSimulation({ ...data, user_name: currentUserName });
+    await fetchAllData();
+    return newSim;
   };
 
-  const addResearch = (res: Omit<ResearchEntry, 'id' | 'addedDate'>) => {
-    const newRes: ResearchEntry = {
-      ...res,
-      id: 'r_' + Date.now(),
-      addedDate: new Date().toISOString().split('T')[0]
-    };
-    setState(prev => ({ ...prev, researchEntries: [newRes, ...prev.researchEntries] }));
+  const updateSimulation = async (id: string, data: Partial<SimulationModel> & { linked_test_ids?: string[] }) => {
+    const updated = await api.updateSimulation(id, { ...data, user_name: currentUserName });
+    await fetchAllData();
+    return updated;
   };
 
-  const addFile = (file: Omit<ProjectFile, 'id' | 'uploadedDate'>) => {
-    const newF: ProjectFile = {
-      ...file,
-      id: 'f_' + Date.now(),
-      uploadedDate: new Date().toISOString().split('T')[0]
-    };
-    setState(prev => ({ ...prev, files: [newF, ...prev.files] }));
+  const deleteSimulation = async (id: string) => {
+    await api.deleteSimulation(id);
+    await fetchAllData();
   };
 
-  const resetToDefault = () => {
-    localStorage.removeItem(STORAGE_KEY);
-    setState(loadInitialState());
+  const linkSimulationExperiment = async (simulation_id: string, test_id: string) => {
+    const res = await api.linkSimulationExperiment(simulation_id, test_id);
+    await fetchAllData();
+    return res;
+  };
+
+  const unlinkSimulationExperiment = async (link_id: string) => {
+    const res = await api.unlinkSimulationExperiment(link_id);
+    await fetchAllData();
+    return res;
+  };
+
+  // --- Issues ---
+  const addIssue = async (data: Partial<IssueItem>) => {
+    const newIssue = await api.addIssue({ ...data, user_name: currentUserName });
+    await fetchAllData();
+    return newIssue;
+  };
+
+  const updateIssue = async (id: string, data: Partial<IssueItem>) => {
+    const updated = await api.updateIssue(id, { ...data, user_name: currentUserName });
+    await fetchAllData();
+    return updated;
+  };
+
+  const deleteIssue = async (id: string) => {
+    await api.deleteIssue(id);
+    await fetchAllData();
+  };
+
+  // --- Documents ---
+  const uploadDocument = async (formData: FormData) => {
+    formData.append('user_name', currentUserName);
+    const doc = await api.uploadDocument(formData);
+    await fetchAllData();
+    return doc;
+  };
+
+  const deleteDocument = async (id: string) => {
+    await api.deleteDocument(id);
+    await fetchAllData();
+  };
+
+  // --- Research Papers ---
+  const addResearchPaper = async (data: Partial<ResearchPaper>) => {
+    const newPaper = await api.addResearchPaper({ ...data, user_name: currentUserName });
+    await fetchAllData();
+    return newPaper;
+  };
+
+  const uploadResearchPaperPdf = async (formData: FormData) => {
+    formData.append('user_name', currentUserName);
+    const newPaper = await api.uploadResearchPaperPdf(formData);
+    await fetchAllData();
+    return newPaper;
+  };
+
+  const updateResearchPaper = async (id: string, data: Partial<ResearchPaper>) => {
+    const updated = await api.updateResearchPaper(id, { ...data, user_name: currentUserName });
+    await fetchAllData();
+    return updated;
+  };
+
+  const deleteResearchPaper = async (id: string) => {
+    await api.deleteResearchPaper(id);
+    await fetchAllData();
+  };
+
+  // --- Learning Resources ---
+  const addLearningResource = async (data: Partial<LearningResource>) => {
+    const newRes = await api.addLearningResource({ ...data, user_name: currentUserName });
+    await fetchAllData();
+    return newRes;
+  };
+
+  const updateLearningResource = async (id: string, data: Partial<LearningResource>) => {
+    const updated = await api.updateLearningResource(id, { ...data, user_name: currentUserName });
+    await fetchAllData();
+    return updated;
+  };
+
+  const deleteLearningResource = async (id: string) => {
+    await api.deleteLearningResource(id);
+    await fetchAllData();
+  };
+
+  // --- Engineering Notes ---
+  const addEngineeringNote = async (data: Partial<EngineeringNote>) => {
+    const newNote = await api.addEngineeringNote({ ...data, user_name: currentUserName });
+    await fetchAllData();
+    return newNote;
+  };
+
+  const updateEngineeringNote = async (id: string, data: Partial<EngineeringNote>) => {
+    const updated = await api.updateEngineeringNote(id, { ...data, user_name: currentUserName });
+    await fetchAllData();
+    return updated;
+  };
+
+  const deleteEngineeringNote = async (id: string) => {
+    await api.deleteEngineeringNote(id);
+    await fetchAllData();
+  };
+
+  // --- Collaborative Report ---
+  const addReportSection = async (data: Partial<ReportSection>) => {
+    const newSec = await api.addReportSection({ ...data, user_name: currentUserName, last_edited_by_id: currentUser?.id });
+    await fetchAllData();
+    return newSec;
+  };
+
+  const updateReportSection = async (id: string, data: Partial<ReportSection>) => {
+    const updated = await api.updateReportSection(id, { ...data, user_name: currentUserName, last_edited_by_id: currentUser?.id });
+    await fetchAllData();
+    return updated;
+  };
+
+  const deleteReportSection = async (id: string) => {
+    await api.deleteReportSection(id);
+    await fetchAllData();
+  };
+
+  const addReportLink = async (data: { report_section_id: string; entity_type: string; entity_id: string; entity_title: string }) => {
+    const link = await api.addReportLink(data);
+    await fetchAllData();
+    return link;
+  };
+
+  const deleteReportLink = async (id: string) => {
+    await api.deleteReportLink(id);
+    await fetchAllData();
+  };
+
+  const updateProjectDetails = async (data: Partial<ProjectInfo>) => {
+    const updated = await api.updateProject({ ...data, user_name: currentUserName });
+    await fetchAllData();
+    return updated;
+  };
+
+  // --- Trash Recovery Actions ---
+  const restoreTrashItem = async (entity_type: string, id: string) => {
+    const res = await api.restoreTrashItem(entity_type, id);
+    await fetchAllData();
+    return res;
+  };
+
+  const purgeTrashItem = async (entity_type: string, id: string) => {
+    const res = await api.purgeTrashItem(entity_type, id);
+    await fetchAllData();
+    return res;
+  };
+
+  // --- Admin Backups & Resilience Actions ---
+  const adminCreateBackup = async (reason?: string) => {
+    const res = await api.adminCreateBackup(reason);
+    await fetchAllData();
+    return res;
+  };
+
+  const adminRestoreBackup = async (filename: string) => {
+    const res = await api.adminRestoreBackup(filename);
+    await fetchAllData();
+    return res;
+  };
+
+  const adminDeleteBackup = async (filename: string) => {
+    const res = await api.adminDeleteBackup(filename);
+    await fetchAllData();
+    return res;
+  };
+
+  // --- External Disaster Recovery Actions ---
+  const adminTriggerExternalBackup = async () => {
+    const res = await api.triggerExternalBackup();
+    await fetchAllData();
+    return res;
+  };
+
+  const adminTestExternalDestination = async () => {
+    return api.testExternalDestination();
+  };
+
+  const adminRestoreCompleteArchive = async (formDataOrData: FormData | { filename: string }) => {
+    const res = await api.restoreCompleteProjectArchive(formDataOrData);
+    await fetchAllData();
+    return res;
+  };
+
+  // --- Admin User Operations ---
+  const adminCreateUser = async (data: { name: string; email: string; password?: string; role?: 'admin' | 'member'; bio?: string }) => {
+    const res = await api.adminCreateUser(data);
+    await fetchAllData();
+    return res;
+  };
+
+  const adminUpdateUserRole = async (id: string, role: 'admin' | 'member') => {
+    const res = await api.adminUpdateUserRole(id, role);
+    await fetchAllData();
+    return res;
+  };
+
+  const adminUpdateUserStatus = async (id: string, is_active: boolean) => {
+    const res = await api.adminUpdateUserStatus(id, is_active);
+    await fetchAllData();
+    return res;
+  };
+
+  const adminResetPassword = async (id: string, password: string) => {
+    const res = await api.adminResetPassword(id, password);
+    await fetchAllData();
+    return res;
+  };
+
+  const adminDeleteUser = async (id: string) => {
+    const res = await api.adminDeleteUser(id);
+    await fetchAllData();
+    return res;
+  };
+
+  const adminDeleteStorageFile = async (filename: string) => {
+    const res = await api.adminDeleteStorageFile(filename);
+    await fetchAllData();
+    return res;
   };
 
   return {
-    state,
+    state: {
+      theme,
+      currentUser,
+      authStatus,
+      project,
+      motorParameters,
+      stats,
+      team,
+      milestones,
+      tasks,
+      tests,
+      simulations,
+      gitHubRepo,
+      gitHubCommits,
+      issues,
+      documents,
+      researchPapers,
+      learningResources,
+      engineeringNotes,
+      reportSections,
+      activities,
+      trashItems,
+      adminUsers,
+      adminStorage,
+      adminBackups,
+      adminBackupStatus,
+      externalBackupStatus,
+      externalBackups,
+      isLoading,
+      error,
+    },
+    refreshAll: fetchAllData,
     toggleTheme,
-    setCurrentUser,
+    login,
+    register,
+    logout,
+    updateMotorParameters,
     addTask,
-    updateTaskStatus,
     updateTask,
     deleteTask,
-    addDoc,
-    addComponent,
-    addExperiment,
+    addMilestone,
+    updateMilestone,
+    deleteMilestone,
+    addTeamMember,
+    updateTeamMember,
+    deleteTeamMember,
+    addTest,
+    uploadTestCsv,
+    deleteTest,
+    addSimulation,
+    updateSimulation,
+    deleteSimulation,
+    linkSimulationExperiment,
+    unlinkSimulationExperiment,
     addIssue,
-    addDecision,
-    addMeeting,
-    convertActionItemToTask,
-    addPhase,
-    updatePhaseProgress,
-    addResearch,
-    addFile,
-    resetToDefault
+    updateIssue,
+    deleteIssue,
+    uploadDocument,
+    deleteDocument,
+    addResearchPaper,
+    uploadResearchPaperPdf,
+    updateResearchPaper,
+    deleteResearchPaper,
+    addLearningResource,
+    updateLearningResource,
+    deleteLearningResource,
+    addEngineeringNote,
+    updateEngineeringNote,
+    deleteEngineeringNote,
+    addReportSection,
+    updateReportSection,
+    deleteReportSection,
+    addReportLink,
+    deleteReportLink,
+    updateProjectDetails,
+    restoreTrashItem,
+    purgeTrashItem,
+    adminCreateBackup,
+    adminRestoreBackup,
+    adminDeleteBackup,
+    adminTriggerExternalBackup,
+    adminTestExternalDestination,
+    adminRestoreCompleteArchive,
+    adminCreateUser,
+    adminUpdateUserRole,
+    adminUpdateUserStatus,
+    adminResetPassword,
+    adminDeleteUser,
+    adminDeleteStorageFile,
   };
 }

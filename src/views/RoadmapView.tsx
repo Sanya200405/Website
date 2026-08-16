@@ -1,141 +1,251 @@
 import React, { useState } from 'react';
-import { Map, Sliders } from 'lucide-react';
+import {
+  Award,
+  Plus,
+  Trash2,
+  Edit2,
+} from 'lucide-react';
 import type { AppState } from '../services/store';
-import type { Phase } from '../types';
+import type { MilestoneItem } from '../services/api';
+import { UserAvatar } from '../components/UserAvatar';
+import { ConfirmModal } from '../components/ConfirmModal';
 
-export const RoadmapView: React.FC<{ state: AppState; onUpdatePhaseProgress: (id: string, progress: number) => void }> = ({
+interface RoadmapViewProps {
+  state: AppState;
+  onOpenNewMilestone: () => void;
+  onEditMilestone: (milestone: MilestoneItem) => void;
+  onDeleteMilestone: (id: string) => void;
+}
+
+export const RoadmapView: React.FC<RoadmapViewProps> = ({
   state,
-  onUpdatePhaseProgress,
+  onOpenNewMilestone,
+  onEditMilestone,
+  onDeleteMilestone,
 }) => {
   const isDark = state.theme === 'dark';
-  const [selectedPhase, setSelectedPhase] = useState<Phase | null>(state.phases[2] || state.phases[0]);
+  const { milestones, tasks, stats } = state;
+
+  const [confirmState, setConfirmState] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'Completed':
+        return isDark
+          ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30 font-semibold'
+          : 'bg-emerald-100 text-emerald-800 border-emerald-300 font-semibold';
+      case 'In Progress':
+        return isDark
+          ? 'bg-sky-500/15 text-sky-400 border-sky-500/30 font-semibold'
+          : 'bg-sky-100 text-sky-800 border-sky-300 font-semibold';
+      case 'Delayed':
+        return isDark
+          ? 'bg-rose-500/15 text-rose-400 border-rose-500/30 font-semibold'
+          : 'bg-rose-100 text-rose-800 border-rose-300 font-semibold';
+      case 'Not Started':
+      default:
+        return isDark
+          ? 'bg-slate-800 text-slate-300 border-slate-700 font-semibold'
+          : 'bg-slate-100 text-slate-700 border-slate-300 font-semibold';
+    }
+  };
+
+  const confirmDeleteMilestone = (ms: MilestoneItem) => {
+    setConfirmState({
+      isOpen: true,
+      title: 'Move Milestone Phase to Trash?',
+      message: `Are you sure you want to move phase "${ms.title}" to the Trash Vault? Assigned tasks will be unlinked from this phase.`,
+      onConfirm: () => {
+        onDeleteMilestone(ms.id);
+        setConfirmState((prev) => ({ ...prev, isOpen: false }));
+      },
+    });
+  };
+
+  const cardBgClass = isDark
+    ? 'bg-slate-900/90 border-slate-800 text-slate-100'
+    : 'bg-white border-slate-200 text-slate-900 shadow-sm';
 
   return (
     <div className="space-y-6 pb-12">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-bold tracking-tight flex items-center gap-2">
-            <Map className="w-5 h-5 text-cyan-400" />
-            <span>Project Roadmap & Phase Progression</span>
-          </h2>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Structured 8-phase engineering pipeline from Moteus study to final integrated FOC drive demonstration.
-          </p>
+      <div className={`p-6 md:p-7 rounded-2xl border transition-all ${cardBgClass}`}>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2.5 mb-1">
+              <Award className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+              <h1 className={`text-2xl font-bold tracking-tight ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
+                Project Progress & Roadmap
+              </h1>
+            </div>
+            <p className={`text-sm max-w-xl font-normal leading-relaxed ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
+              Track project phases and milestones. Progress is dynamically calculated based on completed subtasks.
+            </p>
+          </div>
+          <button
+            onClick={onOpenNewMilestone}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-purple-600 hover:bg-purple-500 text-white shadow-sm transition-all flex-shrink-0"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Milestone Phase</span>
+          </button>
         </div>
       </div>
 
-      {/* Visual Gantt Phase Pipeline */}
-      <div className={`p-5 rounded-2xl border ${isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'}`}>
-        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4">
-          Gantt Phase Schedule
-        </h3>
+      {/* Overview Stats Bar */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className={`p-4 md:p-5 rounded-2xl border ${cardBgClass}`}>
+          <span className={`text-xs font-semibold block ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>Total Milestones</span>
+          <span className={`text-2xl md:text-3xl font-extrabold mt-1 block font-mono ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
+            {stats.totalMilestones}
+          </span>
+        </div>
+        <div className={`p-4 md:p-5 rounded-2xl border ${cardBgClass}`}>
+          <span className={`text-xs font-semibold block ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>Completed Phases</span>
+          <span className={`text-2xl md:text-3xl font-extrabold mt-1 block font-mono ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>
+            {stats.completedMilestones}
+          </span>
+        </div>
+        <div className={`p-4 md:p-5 rounded-2xl border ${cardBgClass}`}>
+          <span className={`text-xs font-semibold block ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>Milestone Progress</span>
+          <span className={`text-2xl md:text-3xl font-extrabold mt-1 block font-mono ${isDark ? 'text-purple-400' : 'text-purple-700'}`}>
+            {stats.overallProgress}%
+          </span>
+        </div>
+        <div className={`p-4 md:p-5 rounded-2xl border ${cardBgClass}`}>
+          <span className={`text-xs font-semibold block ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>Active Tasks Linked</span>
+          <span className={`text-2xl md:text-3xl font-extrabold mt-1 block font-mono ${isDark ? 'text-cyan-400' : 'text-cyan-700'}`}>
+            {stats.totalTasks}
+          </span>
+        </div>
+      </div>
 
-        <div className="space-y-3">
-          {state.phases.map((phase) => {
-            const isSelected = selectedPhase?.id === phase.id;
+      {/* Milestones List */}
+      {milestones.length === 0 ? (
+        <div className={`p-12 md:p-16 text-center rounded-2xl border border-dashed ${isDark ? 'border-slate-800 bg-slate-900/30' : 'border-slate-300 bg-slate-50'}`}>
+          <Award className={`w-10 h-10 mx-auto mb-3 ${isDark ? 'text-slate-600' : 'text-slate-400'}`} />
+          <h3 className={`text-base font-bold ${isDark ? 'text-slate-300' : 'text-slate-800'}`}>No milestones defined yet</h3>
+          <p className={`text-sm max-w-sm mx-auto mt-1 leading-relaxed ${isDark ? 'text-slate-500' : 'text-slate-600'}`}>
+            Break down the FOC motor drive engineering journey into structured roadmap phases.
+          </p>
+          <button
+            onClick={onOpenNewMilestone}
+            className="mt-4 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-purple-600 hover:bg-purple-500 text-white shadow-sm transition-all"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Create Phase 1</span>
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {milestones.map((ms, index) => {
+            const milestoneTasks = tasks.filter((t) => t.milestone_id === ms.id);
+            const completedCount = milestoneTasks.filter((t) => t.status === 'Completed').length;
+            const progress = milestoneTasks.length > 0
+              ? Math.round((completedCount / milestoneTasks.length) * 100)
+              : ms.status === 'Completed' ? 100 : 0;
+
             return (
               <div
-                key={phase.id}
-                onClick={() => setSelectedPhase(phase)}
-                className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
-                  isSelected
-                    ? 'bg-cyan-500/15 border-cyan-500/50 shadow-md ring-1 ring-cyan-500/30'
-                    : isDark ? 'bg-slate-950/60 border-slate-800 hover:border-slate-700' : 'bg-slate-50 border-slate-200'
-                }`}
+                key={ms.id}
+                className={`p-6 md:p-7 rounded-2xl border space-y-4 transition-all ${cardBgClass}`}
               >
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
-                  <div className="flex items-center gap-3">
-                    <span className={`w-6 h-6 rounded-lg text-xs font-mono font-bold flex items-center justify-center ${
-                      phase.status === 'Completed' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' :
-                      phase.status === 'In Progress' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30' :
-                      'bg-slate-800 text-slate-400'
-                    }`}>
-                      {phase.number}
-                    </span>
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-100">{phase.title}</h4>
-                      <p className="text-[10px] text-slate-400 truncate max-w-md">{phase.description}</p>
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                  <div className="space-y-2 flex-1">
+                    <div className="flex items-center gap-2.5 flex-wrap">
+                      <span className={`px-2.5 py-0.5 rounded-lg text-xs font-bold font-mono ${
+                        isDark ? 'bg-purple-950 text-purple-300 border border-purple-800' : 'bg-purple-100 text-purple-800 border border-purple-300'
+                      }`}>
+                        Phase {index + 1}
+                      </span>
+                      <span className={`px-2.5 py-0.5 rounded-lg text-xs font-semibold border ${getStatusBadge(ms.status)}`}>
+                        {ms.status}
+                      </span>
+                      {ms.assigned_member_name && (
+                        <div className={`flex items-center gap-2 text-sm font-medium ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                          <UserAvatar name={ms.assigned_member_name} size="sm" />
+                          <span>{ms.assigned_member_name}</span>
+                        </div>
+                      )}
                     </div>
+                    <h3 className={`text-lg font-bold ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
+                      {ms.title}
+                    </h3>
+                    <p className={`text-sm leading-relaxed max-w-3xl font-normal ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
+                      {ms.description || 'No detailed description provided.'}
+                    </p>
                   </div>
 
-                  <div className="flex items-center gap-3 text-xs">
-                    <span className="text-[10px] font-mono text-slate-400">{phase.startDate} → {phase.endDate}</span>
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                      phase.status === 'Completed' ? 'bg-emerald-500/20 text-emerald-400' :
-                      phase.status === 'In Progress' ? 'bg-cyan-500/20 text-cyan-400' :
-                      'bg-slate-800 text-slate-400'
-                    }`}>
-                      {phase.status}
-                    </span>
-                    <span className="font-extrabold text-cyan-400 text-xs w-10 text-right">
-                      {phase.progressPercentage}%
-                    </span>
+                  <div className="flex items-center gap-2 self-start">
+                    <button
+                      onClick={() => onEditMilestone(ms)}
+                      className={`p-2.5 rounded-xl border transition-colors ${
+                        isDark ? 'bg-slate-800/80 border-slate-700 hover:bg-slate-800 text-slate-300 hover:text-white' : 'bg-slate-50 border-slate-300 text-slate-700 hover:bg-slate-100 hover:text-slate-950'
+                      }`}
+                      title="Edit Milestone"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => confirmDeleteMilestone(ms)}
+                      className={`p-2.5 rounded-xl border transition-colors ${
+                        isDark ? 'bg-slate-800/80 border-slate-700 hover:bg-rose-950/40 text-slate-400 hover:text-rose-400' : 'bg-slate-50 border-slate-300 text-slate-700 hover:bg-rose-50 hover:text-rose-600'
+                      }`}
+                      title="Move Milestone to Trash"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
 
-                {/* Progress Bar Timeline Bar */}
-                <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all ${
-                      phase.status === 'Completed' ? 'bg-emerald-400' :
-                      phase.status === 'In Progress' ? 'bg-gradient-to-r from-cyan-500 to-blue-500' :
-                      'bg-slate-600'
-                    }`}
-                    style={{ width: `${phase.progressPercentage}%` }}
-                  />
+                {/* Progress bar */}
+                <div className={`space-y-2 pt-3 border-t ${isDark ? 'border-slate-800/60' : 'border-slate-100'}`}>
+                  <div className="flex justify-between text-sm">
+                    <span className={`font-semibold ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                      Tasks Progress ({completedCount}/{milestoneTasks.length} Completed)
+                    </span>
+                    <span className={`font-mono font-bold ${isDark ? 'text-purple-400' : 'text-purple-700'}`}>
+                      {progress}%
+                    </span>
+                  </div>
+                  <div className={`w-full h-3 rounded-full overflow-hidden border ${isDark ? 'bg-slate-800 border-slate-700/50' : 'bg-slate-200 border-slate-300'}`}>
+                    <div
+                      className="bg-purple-600 h-full rounded-full transition-all duration-500"
+                      style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
+                    />
+                  </div>
+                  <div className={`flex items-center justify-between text-xs pt-1 font-mono ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+                    <span>Start: {ms.start_date || '—'}</span>
+                    <span>Target Due: {ms.due_date || '—'}</span>
+                  </div>
                 </div>
               </div>
             );
           })}
         </div>
-      </div>
-
-      {/* Selected Phase Detail Inspector */}
-      {selectedPhase && (
-        <div className={`p-6 rounded-2xl border ${isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'}`}>
-          <div className="flex items-center justify-between border-b border-slate-800 pb-4 mb-4">
-            <div>
-              <span className="text-[10px] font-mono font-bold uppercase text-cyan-400">
-                Phase Inspector #{selectedPhase.number}
-              </span>
-              <h3 className="text-base font-bold text-slate-100 mt-0.5">{selectedPhase.title}</h3>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="text-right">
-                <span className="text-[10px] text-slate-400 block">Lead Engineer</span>
-                <span className="text-xs font-semibold text-cyan-300">{selectedPhase.assigneeName}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <div>
-              <h4 className="text-xs font-bold text-slate-300 mb-1">Phase Objectives & Scope</h4>
-              <p className="text-xs text-slate-300 leading-relaxed">{selectedPhase.description}</p>
-            </div>
-
-            {/* Interactive Progress Slider */}
-            <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800">
-              <div className="flex items-center justify-between mb-2">
-                <label className="text-xs font-bold text-slate-200 flex items-center gap-2">
-                  <Sliders className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>Update Phase Progress (%)</span>
-                </label>
-                <span className="text-sm font-extrabold text-cyan-400">{selectedPhase.progressPercentage}%</span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={selectedPhase.progressPercentage}
-                onChange={(e) => onUpdatePhaseProgress(selectedPhase.id, Number(e.target.value))}
-                className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-400"
-              />
-            </div>
-          </div>
-        </div>
       )}
+
+      {/* Confirmation Modal */}
+      <ConfirmModal
+        isOpen={confirmState.isOpen}
+        onClose={() => setConfirmState((prev) => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmState.onConfirm}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmText="Move to Trash"
+        confirmVariant="danger"
+        theme={state.theme}
+      />
     </div>
   );
 };

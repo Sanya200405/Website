@@ -1,133 +1,330 @@
-import React, { useState } from 'react';
-import { Search, X, CheckSquare, FileText, Cpu, FlaskConical, ShieldAlert, GitCommit, Users2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Search, X, CheckSquare, Award, FlaskConical, ShieldAlert, FolderGit2, BookOpen, GraduationCap, FileCode2, FileText } from 'lucide-react';
 import type { AppState } from '../services/store';
+import type { NavSection } from './Sidebar';
 
 interface GlobalSearchModalProps {
   isOpen: boolean;
   onClose: () => void;
   state: AppState;
-  onSelectEntity: (type: string, id: string) => void;
+  onNavigate: (section: NavSection) => void;
+  theme?: 'dark' | 'light';
 }
 
 export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
   isOpen,
   onClose,
   state,
-  onSelectEntity,
+  onNavigate,
+  theme = 'dark',
 }) => {
-  if (!isOpen) return null;
+  const isDark = theme === 'dark';
   const [query, setQuery] = useState('');
-  const isDark = state.theme === 'dark';
+  const { tasks, milestones, tests, issues, documents, researchPapers, learningResources, engineeringNotes, reportSections } = state;
+
+  useEffect(() => {
+    if (!isOpen) setQuery('');
+  }, [isOpen]);
+
+  if (!isOpen) return null;
 
   const q = query.toLowerCase().trim();
 
-  const results: { type: string; title: string; subtitle: string; icon: any; id: string; category: string }[] = [];
+  const matchingTasks = q ? tasks.filter((t) => t.title.toLowerCase().includes(q) || (t.description && t.description.toLowerCase().includes(q))) : [];
+  const matchingMilestones = q ? milestones.filter((m) => m.title.toLowerCase().includes(q) || (m.description && m.description.toLowerCase().includes(q))) : [];
+  const matchingPapers = q ? researchPapers.filter((p) => p.title.toLowerCase().includes(q) || (p.authors && p.authors.toLowerCase().includes(q)) || (p.topic && p.topic.toLowerCase().includes(q))) : [];
+  const matchingResources = q ? learningResources.filter((r) => r.title.toLowerCase().includes(q) || (r.topic && r.topic.toLowerCase().includes(q))) : [];
+  const matchingNotes = q ? engineeringNotes.filter((n) => n.title.toLowerCase().includes(q) || (n.content && n.content.toLowerCase().includes(q))) : [];
+  const matchingChapters = q ? reportSections.filter((s) => s.title.toLowerCase().includes(q) || (s.content && s.content.toLowerCase().includes(q))) : [];
+  const matchingTests = q ? tests.filter((t) => t.test_name.toLowerCase().includes(q) || (t.observations && t.observations.toLowerCase().includes(q))) : [];
+  const matchingIssues = q ? issues.filter((i) => i.title.toLowerCase().includes(q) || (i.description && i.description.toLowerCase().includes(q))) : [];
+  const matchingDocs = q ? documents.filter((d) => d.file_name.toLowerCase().includes(q) || (d.description && d.description.toLowerCase().includes(q))) : [];
 
-  if (q.length > 0) {
-    // Tasks
-    state.tasks.forEach(t => {
-      if (t.title.toLowerCase().includes(q) || t.description.toLowerCase().includes(q) || t.tags.some(tag => tag.toLowerCase().includes(q))) {
-        results.push({ type: 'task', id: t.id, title: t.title, subtitle: `Task • ${t.category} • ${t.status}`, icon: CheckSquare, category: 'Task' });
-      }
-    });
-    // Docs
-    state.docs.forEach(d => {
-      if (d.title.toLowerCase().includes(q) || d.content.toLowerCase().includes(q) || d.tags.some(tag => tag.toLowerCase().includes(q))) {
-        results.push({ type: 'doc', id: d.id, title: d.title, subtitle: `Doc • ${d.category} • ${d.authorName}`, icon: FileText, category: 'Documentation' });
-      }
-    });
-    // Components
-    state.components.forEach(c => {
-      if (c.name.toLowerCase().includes(q) || c.partNumber.toLowerCase().includes(q) || c.manufacturer.toLowerCase().includes(q) || c.purpose.toLowerCase().includes(q)) {
-        results.push({ type: 'component', id: c.id, title: `${c.name} (${c.partNumber})`, subtitle: `Component • ${c.category} • ${c.status}`, icon: Cpu, category: 'Component' });
-      }
-    });
-    // Experiments
-    state.experiments.forEach(e => {
-      if (e.title.toLowerCase().includes(q) || e.objective.toLowerCase().includes(q) || e.observations.toLowerCase().includes(q)) {
-        results.push({ type: 'experiment', id: e.id, title: e.title, subtitle: `Experiment • ${e.motorUsed} • ${e.date}`, icon: FlaskConical, category: 'Experiment' });
-      }
-    });
-    // Issues
-    state.issues.forEach(iss => {
-      if (iss.title.toLowerCase().includes(q) || iss.description.toLowerCase().includes(q)) {
-        results.push({ type: 'issue', id: iss.id, title: iss.title, subtitle: `Issue • ${iss.severity} • ${iss.status}`, icon: ShieldAlert, category: 'Issue' });
-      }
-    });
-    // Decisions
-    state.decisions.forEach(dec => {
-      if (dec.title.toLowerCase().includes(q) || dec.decision.toLowerCase().includes(q)) {
-        results.push({ type: 'decision', id: dec.id, title: dec.title, subtitle: `ADR Decision • ${dec.date}`, icon: GitCommit, category: 'Decision' });
-      }
-    });
-    // Meetings
-    state.meetings.forEach(m => {
-      if (m.title.toLowerCase().includes(q) || m.notes.toLowerCase().includes(q)) {
-        results.push({ type: 'meeting', id: m.id, title: m.title, subtitle: `Meeting • ${m.date}`, icon: Users2, category: 'Meeting' });
-      }
-    });
-  }
+  const totalResults =
+    matchingTasks.length +
+    matchingMilestones.length +
+    matchingPapers.length +
+    matchingResources.length +
+    matchingNotes.length +
+    matchingChapters.length +
+    matchingTests.length +
+    matchingIssues.length +
+    matchingDocs.length;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 bg-black/70 backdrop-blur-sm p-4">
-      <div className={`w-full max-w-2xl rounded-2xl border shadow-2xl overflow-hidden flex flex-col max-h-[80vh] ${
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 p-4 bg-slate-950/75 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className={`w-full max-w-xl rounded-2xl border shadow-2xl p-4 md:p-5 space-y-3.5 ${
         isDark ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-900'
       }`}>
-        {/* Search Input Bar */}
-        <div className="p-4 border-b border-slate-800 flex items-center gap-3">
-          <Search className="w-5 h-5 text-cyan-400" />
+        <div className="relative flex items-center">
+          <Search className={`w-4 h-4 absolute left-3.5 ${isDark ? 'text-slate-400' : 'text-slate-500'}`} />
           <input
             type="text"
             autoFocus
+            placeholder="Search tasks, research papers, notes, report chapters, tests..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search across Tasks, Docs, Components, Experiments, Meetings, Issues..."
-            className="flex-1 bg-transparent text-sm focus:outline-none placeholder:text-slate-500"
+            className={`w-full pl-10 pr-9 py-2.5 text-sm rounded-xl border focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-colors ${
+              isDark
+                ? 'bg-slate-950 border-slate-800 text-slate-100 placeholder-slate-500'
+                : 'bg-slate-50 border-slate-300 text-slate-900 placeholder-slate-400'
+            }`}
           />
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-slate-800 text-slate-400">
+          <button
+            onClick={onClose}
+            className={`p-1.5 rounded-lg transition-colors absolute right-2.5 ${
+              isDark ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-800' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
+            }`}
+          >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Results Stream */}
-        <div className="flex-1 overflow-y-auto p-3 space-y-1">
-          {q.length === 0 ? (
-            <div className="py-12 text-center text-slate-500 text-xs">
-              Type keywords to search across the entire project engineering memory...
+        {/* Results List */}
+        <div className="max-h-96 overflow-y-auto space-y-3 pt-1">
+          {q && totalResults === 0 ? (
+            <div className={`py-8 text-center text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+              No project records matching "{query}"
             </div>
-          ) : results.length === 0 ? (
-            <div className="py-12 text-center text-slate-500 text-xs">
-              No matching records found for "{query}".
+          ) : !q ? (
+            <div className={`py-6 text-center text-sm ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
+              Start typing to search your project database...
             </div>
           ) : (
-            results.map((res, idx) => {
-              const Icon = res.icon;
-              return (
-                <button
-                  key={idx}
-                  onClick={() => {
-                    onSelectEntity(res.type, res.id);
-                    onClose();
-                  }}
-                  className={`w-full text-left p-3 rounded-xl border flex items-center justify-between transition-all ${
-                    isDark ? 'bg-slate-950/60 border-slate-800 hover:border-cyan-500/50 hover:bg-slate-800/80' : 'bg-slate-50 border-slate-200 hover:border-cyan-300 hover:bg-slate-100'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-cyan-500/10 text-cyan-400">
-                      <Icon className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold">{res.title}</p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">{res.subtitle}</p>
-                    </div>
+            <>
+              {matchingPapers.length > 0 && (
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400 px-2 mb-1.5">
+                    Research Papers ({matchingPapers.length})
                   </div>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-cyan-300">
-                    {res.category}
-                  </span>
-                </button>
-              );
-            })
+                  {matchingPapers.map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => {
+                        onNavigate('knowledge');
+                        onClose();
+                      }}
+                      className={`w-full flex items-center justify-between p-2.5 rounded-xl text-left text-sm transition-colors ${
+                        isDark ? 'hover:bg-slate-800 text-slate-200' : 'hover:bg-slate-100 text-slate-800'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <BookOpen className="w-4 h-4 text-cyan-600 dark:text-cyan-400 flex-shrink-0" />
+                        <span className="font-semibold">{p.title}</span>
+                      </div>
+                      <span className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{p.reading_status}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {matchingResources.length > 0 && (
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 px-2 mb-1.5">
+                    Learning Resources ({matchingResources.length})
+                  </div>
+                  {matchingResources.map((r) => (
+                    <button
+                      key={r.id}
+                      onClick={() => {
+                        onNavigate('knowledge');
+                        onClose();
+                      }}
+                      className={`w-full flex items-center justify-between p-2.5 rounded-xl text-left text-sm transition-colors ${
+                        isDark ? 'hover:bg-slate-800 text-slate-200' : 'hover:bg-slate-100 text-slate-800'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <GraduationCap className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
+                        <span className="font-semibold">{r.title}</span>
+                      </div>
+                      <span className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{r.resource_type}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {matchingChapters.length > 0 && (
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 px-2 mb-1.5">
+                    Report Chapters ({matchingChapters.length})
+                  </div>
+                  {matchingChapters.map((c) => (
+                    <button
+                      key={c.id}
+                      onClick={() => {
+                        onNavigate('report');
+                        onClose();
+                      }}
+                      className={`w-full flex items-center justify-between p-2.5 rounded-xl text-left text-sm transition-colors ${
+                        isDark ? 'hover:bg-slate-800 text-slate-200' : 'hover:bg-slate-100 text-slate-800'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <FileText className="w-4 h-4 text-indigo-600 dark:text-indigo-400 flex-shrink-0" />
+                        <span className="font-semibold">{c.title}</span>
+                      </div>
+                      <span className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{c.status}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {matchingNotes.length > 0 && (
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 px-2 mb-1.5">
+                    Engineering Notes ({matchingNotes.length})
+                  </div>
+                  {matchingNotes.map((n) => (
+                    <button
+                      key={n.id}
+                      onClick={() => {
+                        onNavigate('knowledge');
+                        onClose();
+                      }}
+                      className={`w-full flex items-center justify-between p-2.5 rounded-xl text-left text-sm transition-colors ${
+                        isDark ? 'hover:bg-slate-800 text-slate-200' : 'hover:bg-slate-100 text-slate-800'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <FileCode2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
+                        <span className="font-semibold">{n.title}</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {matchingTasks.length > 0 && (
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400 px-2 mb-1.5">
+                    Tasks ({matchingTasks.length})
+                  </div>
+                  {matchingTasks.map((t) => (
+                    <button
+                      key={t.id}
+                      onClick={() => {
+                        onNavigate('tasks');
+                        onClose();
+                      }}
+                      className={`w-full flex items-center justify-between p-2.5 rounded-xl text-left text-sm transition-colors ${
+                        isDark ? 'hover:bg-slate-800 text-slate-200' : 'hover:bg-slate-100 text-slate-800'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <CheckSquare className="w-4 h-4 text-cyan-600 dark:text-cyan-400 flex-shrink-0" />
+                        <span className="font-semibold">{t.title}</span>
+                      </div>
+                      <span className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{t.status}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {matchingMilestones.length > 0 && (
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400 px-2 mb-1.5">
+                    Milestones ({matchingMilestones.length})
+                  </div>
+                  {matchingMilestones.map((m) => (
+                    <button
+                      key={m.id}
+                      onClick={() => {
+                        onNavigate('roadmap');
+                        onClose();
+                      }}
+                      className={`w-full flex items-center justify-between p-2.5 rounded-xl text-left text-sm transition-colors ${
+                        isDark ? 'hover:bg-slate-800 text-slate-200' : 'hover:bg-slate-100 text-slate-800'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <Award className="w-4 h-4 text-purple-600 dark:text-purple-400 flex-shrink-0" />
+                        <span className="font-semibold">{m.title}</span>
+                      </div>
+                      <span className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{m.status}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {matchingTests.length > 0 && (
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400 px-2 mb-1.5">
+                    Testing ({matchingTests.length})
+                  </div>
+                  {matchingTests.map((t) => (
+                    <button
+                      key={t.id}
+                      onClick={() => {
+                        onNavigate('testing');
+                        onClose();
+                      }}
+                      className={`w-full flex items-center justify-between p-2.5 rounded-xl text-left text-sm transition-colors ${
+                        isDark ? 'hover:bg-slate-800 text-slate-200' : 'hover:bg-slate-100 text-slate-800'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <FlaskConical className="w-4 h-4 text-cyan-600 dark:text-cyan-400 flex-shrink-0" />
+                        <span className="font-semibold">{t.test_name}</span>
+                      </div>
+                      <span className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{t.status}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {matchingIssues.length > 0 && (
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-wider text-rose-600 dark:text-rose-400 px-2 mb-1.5">
+                    Issues ({matchingIssues.length})
+                  </div>
+                  {matchingIssues.map((i) => (
+                    <button
+                      key={i.id}
+                      onClick={() => {
+                        onNavigate('issues');
+                        onClose();
+                      }}
+                      className={`w-full flex items-center justify-between p-2.5 rounded-xl text-left text-sm transition-colors ${
+                        isDark ? 'hover:bg-slate-800 text-slate-200' : 'hover:bg-slate-100 text-slate-800'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <ShieldAlert className="w-4 h-4 text-rose-600 dark:text-rose-400 flex-shrink-0" />
+                        <span className="font-semibold">{i.title}</span>
+                      </div>
+                      <span className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{i.priority}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {matchingDocs.length > 0 && (
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400 px-2 mb-1.5">
+                    Documents ({matchingDocs.length})
+                  </div>
+                  {matchingDocs.map((d) => (
+                    <button
+                      key={d.id}
+                      onClick={() => {
+                        onNavigate('knowledge');
+                        onClose();
+                      }}
+                      className={`w-full flex items-center justify-between p-2.5 rounded-xl text-left text-sm transition-colors ${
+                        isDark ? 'hover:bg-slate-800 text-slate-200' : 'hover:bg-slate-100 text-slate-800'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <FolderGit2 className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+                        <span className="font-semibold">{d.file_name}</span>
+                      </div>
+                      <span className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{d.type}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

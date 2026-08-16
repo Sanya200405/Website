@@ -1,297 +1,262 @@
-import React, { useState } from 'react';
-import { X } from 'lucide-react';
-import type { Task, TaskPriority, TaskCategory, TaskStatus, User, Milestone } from '../types';
+import React, { useState, useEffect } from 'react';
+import { X, CheckSquare } from 'lucide-react';
+import type { TaskItem, TeamMember, MilestoneItem } from '../services/api';
 
 interface TaskModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (task: Omit<Task, 'id' | 'createdDate' | 'lastUpdated'>) => void;
-  users: User[];
-  milestones: Milestone[];
-  isDark: boolean;
-  currentUser: User;
+  onSave: (task: Partial<TaskItem>) => Promise<any>;
+  task?: TaskItem | null;
+  team: TeamMember[];
+  milestones: MilestoneItem[];
+  theme?: 'dark' | 'light';
 }
 
 export const TaskModal: React.FC<TaskModalProps> = ({
   isOpen,
   onClose,
   onSave,
-  users,
+  task,
+  team,
   milestones,
-  isDark,
-  currentUser,
+  theme = 'dark',
 }) => {
-  if (!isOpen) return null;
-
+  const isDark = theme === 'dark';
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [assignedToId, setAssignedToId] = useState(users[0]?.id || 'u1');
-  const [priority, setPriority] = useState<TaskPriority>('Medium');
-  const [category, setCategory] = useState<TaskCategory>('Hardware');
-  const [status, setStatus] = useState<TaskStatus>('Not Started');
-  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
-  const [deadline, setDeadline] = useState(new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0]);
-  const [estimatedHours, setEstimatedHours] = useState(8);
-  const [milestoneId, setMilestoneId] = useState<string>(milestones[0]?.id || '');
-  const [tagInput, setTagInput] = useState('');
-  const [tags, setTags] = useState<string[]>(['FOC', 'BLDC']);
+  const [assignedToId, setAssignedToId] = useState('');
+  const [milestoneId, setMilestoneId] = useState('');
+  const [status, setStatus] = useState<TaskItem['status']>('Not Started');
+  const [priority, setPriority] = useState<TaskItem['priority']>('Medium');
+  const [category, setCategory] = useState('Hardware');
+  const [startDate, setStartDate] = useState('');
+  const [dueDate, setDueDate] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleAddTag = () => {
-    if (tagInput.trim() && !tags.includes(tagInput.trim())) {
-      setTags([...tags, tagInput.trim()]);
-      setTagInput('');
+  useEffect(() => {
+    if (task) {
+      setTitle(task.title || '');
+      setDescription(task.description || '');
+      setAssignedToId(task.assigned_to_id || '');
+      setMilestoneId(task.milestone_id || '');
+      setStatus(task.status || 'Not Started');
+      setPriority(task.priority || 'Medium');
+      setCategory(task.category || 'Hardware');
+      setStartDate(task.start_date || '');
+      setDueDate(task.due_date || '');
+    } else {
+      setTitle('');
+      setDescription('');
+      setAssignedToId(team[0]?.id || '');
+      setMilestoneId(milestones[0]?.id || '');
+      setStatus('Not Started');
+      setPriority('Medium');
+      setCategory('Hardware');
+      setStartDate(new Date().toISOString().split('T')[0]);
+      setDueDate('');
     }
-  };
+  }, [task, isOpen, team, milestones]);
 
-  const handleRemoveTag = (t: string) => {
-    setTags(tags.filter(item => item !== t));
-  };
+  if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
 
-    const assignedUser = users.find(u => u.id === assignedToId) || users[0];
-    const selectedMilestone = milestones.find(m => m.id === milestoneId);
-
-    onSave({
-      title,
-      description,
-      assignedToId: assignedUser.id,
-      assignedToName: assignedUser.name,
-      assignedToAvatar: assignedUser.avatar,
-      priority,
-      status,
-      category,
-      startDate,
-      deadline,
-      estimatedEffortHours: Number(estimatedHours),
-      actualEffortHours: 0,
-      milestoneId: selectedMilestone?.id,
-      milestoneTitle: selectedMilestone?.title,
-      checklist: [],
-      comments: [],
-      dependencies: [],
-      createdBy: currentUser.name,
-      tags
-    });
-
-    onClose();
+    setIsSubmitting(true);
+    try {
+      await onSave({
+        title: title.trim(),
+        description: description.trim(),
+        assigned_to_id: assignedToId || undefined,
+        milestone_id: milestoneId || undefined,
+        status,
+        priority,
+        category,
+        start_date: startDate,
+        due_date: dueDate,
+      });
+      onClose();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
+  const inputClass = `w-full px-3.5 py-2.5 text-sm rounded-xl border focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-colors ${
+    isDark
+      ? 'bg-slate-950 border-slate-800 text-slate-100 placeholder-slate-500'
+      : 'bg-slate-50 border-slate-300 text-slate-900 placeholder-slate-400'
+  }`;
+
+  const labelClass = `font-semibold text-xs tracking-wide ${isDark ? 'text-slate-300' : 'text-slate-700'}`;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 overflow-y-auto">
-      <div className={`w-full max-w-xl rounded-2xl border shadow-2xl overflow-hidden my-8 ${
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className={`w-full max-w-lg rounded-2xl border shadow-2xl p-6 md:p-7 space-y-5 ${
         isDark ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-900'
       }`}>
-        <div className="p-5 border-b border-slate-800 flex items-center justify-between">
-          <h3 className="text-sm font-bold tracking-tight">Create New Engineering Task</h3>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-slate-800 text-slate-400">
+        <div className={`flex items-center justify-between pb-3.5 border-b ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
+          <div className="flex items-center gap-2.5">
+            <CheckSquare className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
+            <h2 className={`text-base font-bold tracking-tight ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
+              {task ? 'Edit Task' : 'Create New Task'}
+            </h2>
+          </div>
+          <button
+            onClick={onClose}
+            className={`p-1.5 rounded-lg transition-colors ${
+              isDark ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-800' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
+            }`}
+          >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-5 space-y-4 text-xs">
-          {/* Title */}
-          <div>
-            <label className="block font-semibold mb-1">Task Title *</label>
+        <form onSubmit={handleSubmit} className="space-y-4 text-sm">
+          <div className="space-y-1.5">
+            <label className={labelClass}>Task Title *</label>
             <input
               type="text"
               required
+              placeholder="e.g. Design 3-phase inverter MOSFET gate driver stage"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. Design Gate Driver Isolation Filter circuit"
-              className={`w-full px-3 py-2 rounded-xl border focus:outline-none focus:border-cyan-500 ${
-                isDark ? 'bg-slate-950 border-slate-800 text-slate-100' : 'bg-slate-50 border-slate-200'
-              }`}
+              className={inputClass}
             />
           </div>
 
-          {/* Description */}
-          <div>
-            <label className="block font-semibold mb-1">Description & Requirements</label>
+          <div className="space-y-1.5">
+            <label className={labelClass}>Description</label>
             <textarea
               rows={3}
+              placeholder="Add engineering details, pinouts, test procedures, or specs..."
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Provide detailed technical steps, pinouts, or mathematical goals..."
-              className={`w-full px-3 py-2 rounded-xl border focus:outline-none focus:border-cyan-500 ${
-                isDark ? 'bg-slate-950 border-slate-800 text-slate-100' : 'bg-slate-50 border-slate-200'
-              }`}
+              className={inputClass}
             />
           </div>
 
-          {/* Row 1: Assignee & Category */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block font-semibold mb-1">Assign Member</label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            <div className="space-y-1.5">
+              <label className={labelClass}>Assigned Member</label>
               <select
                 value={assignedToId}
                 onChange={(e) => setAssignedToId(e.target.value)}
-                className={`w-full px-3 py-2 rounded-xl border focus:outline-none ${
-                  isDark ? 'bg-slate-950 border-slate-800 text-slate-100' : 'bg-slate-50 border-slate-200'
-                }`}
+                className={inputClass}
               >
-                {users.map(u => (
-                  <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
+                <option value="">Unassigned</option>
+                {team.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name} ({m.role})
+                  </option>
                 ))}
               </select>
             </div>
 
-            <div>
-              <label className="block font-semibold mb-1">Subsystem Category</label>
+            <div className="space-y-1.5">
+              <label className={labelClass}>Milestone</label>
+              <select
+                value={milestoneId}
+                onChange={(e) => setMilestoneId(e.target.value)}
+                className={inputClass}
+              >
+                <option value="">No Milestone Linked</option>
+                {milestones.map((ms) => (
+                  <option key={ms.id} value={ms.id}>
+                    {ms.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div className="space-y-1.5">
+              <label className={labelClass}>Category</label>
               <select
                 value={category}
-                onChange={(e) => setCategory(e.target.value as TaskCategory)}
-                className={`w-full px-3 py-2 rounded-xl border focus:outline-none ${
-                  isDark ? 'bg-slate-950 border-slate-800 text-slate-100' : 'bg-slate-50 border-slate-200'
-                }`}
+                onChange={(e) => setCategory(e.target.value)}
+                className={inputClass}
               >
-                {['Hardware', 'Firmware', 'FOC', 'Mechanical', 'Research', 'Testing', 'Documentation', 'Management'].map(c => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
+                <option value="Hardware">Hardware</option>
+                <option value="Firmware">Firmware</option>
+                <option value="FOC Control">FOC Control</option>
+                <option value="Mechanical">Mechanical</option>
+                <option value="Testing">Testing</option>
+                <option value="Documentation">Documentation</option>
+                <option value="General">General</option>
               </select>
             </div>
-          </div>
 
-          {/* Row 2: Priority & Status */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block font-semibold mb-1">Priority Level</label>
+            <div className="space-y-1.5">
+              <label className={labelClass}>Priority</label>
               <select
                 value={priority}
-                onChange={(e) => setPriority(e.target.value as TaskPriority)}
-                className={`w-full px-3 py-2 rounded-xl border focus:outline-none ${
-                  isDark ? 'bg-slate-950 border-slate-800 text-slate-100' : 'bg-slate-50 border-slate-200'
-                }`}
+                onChange={(e) => setPriority(e.target.value as TaskItem['priority'])}
+                className={inputClass}
               >
-                {['Low', 'Medium', 'High', 'Critical'].map(p => (
-                  <option key={p} value={p}>{p}</option>
-                ))}
+                <option value="Low">Low</option>
+                <option value="Medium">Medium</option>
+                <option value="High">High</option>
+                <option value="Critical">Critical</option>
               </select>
             </div>
 
-            <div>
-              <label className="block font-semibold mb-1">Initial Status</label>
+            <div className="space-y-1.5">
+              <label className={labelClass}>Status</label>
               <select
                 value={status}
-                onChange={(e) => setStatus(e.target.value as TaskStatus)}
-                className={`w-full px-3 py-2 rounded-xl border focus:outline-none ${
-                  isDark ? 'bg-slate-950 border-slate-800 text-slate-100' : 'bg-slate-50 border-slate-200'
-                }`}
+                onChange={(e) => setStatus(e.target.value as TaskItem['status'])}
+                className={inputClass}
               >
-                {['Backlog', 'Not Started', 'In Progress', 'Blocked', 'Under Review', 'Completed'].map(s => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
+                <option value="Not Started">Not Started</option>
+                <option value="In Progress">In Progress</option>
+                <option value="Blocked">Blocked</option>
+                <option value="Completed">Completed</option>
               </select>
             </div>
           </div>
 
-          {/* Row 3: Dates & Effort */}
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="block font-semibold mb-1">Start Date</label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            <div className="space-y-1.5">
+              <label className={labelClass}>Start Date</label>
               <input
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className={`w-full px-3 py-2 rounded-xl border focus:outline-none ${
-                  isDark ? 'bg-slate-950 border-slate-800 text-slate-100' : 'bg-slate-50 border-slate-200'
-                }`}
+                className={inputClass}
               />
             </div>
 
-            <div>
-              <label className="block font-semibold mb-1">Deadline</label>
+            <div className="space-y-1.5">
+              <label className={labelClass}>Due Date</label>
               <input
                 type="date"
-                value={deadline}
-                onChange={(e) => setDeadline(e.target.value)}
-                className={`w-full px-3 py-2 rounded-xl border focus:outline-none ${
-                  isDark ? 'bg-slate-950 border-slate-800 text-slate-100' : 'bg-slate-50 border-slate-200'
-                }`}
-              />
-            </div>
-
-            <div>
-              <label className="block font-semibold mb-1">Est. Effort (Hours)</label>
-              <input
-                type="number"
-                min={1}
-                max={100}
-                value={estimatedHours}
-                onChange={(e) => setEstimatedHours(Number(e.target.value))}
-                className={`w-full px-3 py-2 rounded-xl border focus:outline-none ${
-                  isDark ? 'bg-slate-950 border-slate-800 text-slate-100' : 'bg-slate-50 border-slate-200'
-                }`}
+                value={dueDate}
+                onChange={(e) => setDueDate(e.target.value)}
+                className={inputClass}
               />
             </div>
           </div>
 
-          {/* Milestone */}
-          <div>
-            <label className="block font-semibold mb-1">Related Milestone</label>
-            <select
-              value={milestoneId}
-              onChange={(e) => setMilestoneId(e.target.value)}
-              className={`w-full px-3 py-2 rounded-xl border focus:outline-none ${
-                isDark ? 'bg-slate-950 border-slate-800 text-slate-100' : 'bg-slate-50 border-slate-200'
-              }`}
-            >
-              <option value="">-- No Milestone --</option>
-              {milestones.map(m => (
-                <option key={m.id} value={m.id}>{m.title}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Tags */}
-          <div>
-            <label className="block font-semibold mb-1">Tags</label>
-            <div className="flex gap-2 mb-2">
-              <input
-                type="text"
-                value={tagInput}
-                onChange={(e) => setTagInput(e.target.value)}
-                placeholder="Add tag and click +"
-                className={`flex-1 px-3 py-1.5 rounded-xl border focus:outline-none ${
-                  isDark ? 'bg-slate-950 border-slate-800 text-slate-100' : 'bg-slate-50 border-slate-200'
-                }`}
-              />
-              <button
-                type="button"
-                onClick={handleAddTag}
-                className="px-3 py-1.5 rounded-xl bg-cyan-500/20 text-cyan-400 font-semibold hover:bg-cyan-500/30"
-              >
-                + Add
-              </button>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {tags.map(t => (
-                <span key={t} className="px-2 py-0.5 rounded-full text-[10px] bg-slate-800 text-cyan-300 flex items-center gap-1 border border-slate-700">
-                  #{t}
-                  <button type="button" onClick={() => handleRemoveTag(t)} className="hover:text-rose-400">
-                    ×
-                  </button>
-                </span>
-              ))}
-            </div>
-          </div>
-
-          {/* Footer Submit */}
-          <div className="pt-4 border-t border-slate-800 flex items-center justify-end gap-3">
+          <div className={`flex items-center justify-end gap-2.5 pt-3.5 border-t ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-xl border border-slate-800 text-slate-400 hover:bg-slate-800 font-semibold"
+              className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
+                isDark ? 'text-slate-400 hover:bg-slate-800 hover:text-slate-200' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              }`}
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-5 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-semibold shadow-lg shadow-cyan-500/20"
+              disabled={isSubmitting}
+              className="px-5 py-2.5 rounded-xl text-sm font-semibold bg-cyan-600 hover:bg-cyan-500 text-white shadow-sm transition-all disabled:opacity-50"
             >
-              Create Task
+              {isSubmitting ? 'Saving...' : task ? 'Update Task' : 'Save Task'}
             </button>
           </div>
         </form>

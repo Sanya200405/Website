@@ -1,4 +1,4 @@
-export type UserRole = 'Admin' | 'Project Lead' | 'Hardware' | 'Firmware' | 'Control/FOC' | 'Mechanical' | 'Testing' | 'Documentation' | 'Viewer';
+export type UserRole = 'Team Member';
 
 export interface User {
   id: string;
@@ -77,7 +77,7 @@ export interface Phase {
   startDate: string;
   endDate: string;
   progressPercentage: number;
-  status: 'Completed' | 'In Progress' | 'Upcoming' | 'Delayed';
+  status: 'Not Started' | 'Completed' | 'In Progress' | 'Upcoming' | 'Delayed';
   assigneeName: string;
   milestoneCount: number;
   dependencies: string[];

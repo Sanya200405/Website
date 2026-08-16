@@ -1,261 +1,493 @@
-import React, { useState } from 'react';
-import { FlaskConical, Plus } from 'lucide-react';
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend } from 'recharts';
+import React, { useState, useEffect } from 'react';
+import {
+  FlaskConical,
+  Plus,
+  Trash2,
+} from 'lucide-react';
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+} from 'recharts';
 import type { AppState } from '../services/store';
-import type { ExperimentLog } from '../types';
+import { api, type TestMeasurement, type TestItem } from '../services/api';
+import { ConfirmModal } from '../components/ConfirmModal';
 
-export const ExperimentsView: React.FC<{
+interface TestingViewProps {
   state: AppState;
-  onAddExperiment: (exp: Omit<ExperimentLog, 'id'>) => void;
-}> = ({ state, onAddExperiment }) => {
+  onOpenNewTest: () => void;
+  onDeleteTest: (id: string) => void;
+}
+
+export const ExperimentsView: React.FC<TestingViewProps> = ({
+  state,
+  onOpenNewTest,
+  onDeleteTest,
+}) => {
   const isDark = state.theme === 'dark';
-  const [selectedExp, setSelectedExp] = useState<ExperimentLog>(state.experiments[0]);
-  const [showAddModal, setShowAddModal] = useState(false);
+  const { tests, stats } = state;
 
-  const [title, setTitle] = useState('');
-  const [objective, setObjective] = useState('');
-  const [motorUsed, setMotorUsed] = useState('MAD 5005 BLDC (350KV)');
-  const [supplyVoltageV, setSupplyVoltageV] = useState(24);
-  const [pwmFrequencyKhz, setPwmFrequencyKhz] = useState(20);
-  const [expectedResult, setExpectedResult] = useState('');
-  const [actualResult, setActualResult] = useState('');
-  const [observations, setObservations] = useState('');
-  const [nextAction, setNextAction] = useState('');
+  const [selectedTestId, setSelectedTestId] = useState<string | null>(tests[0]?.id || null);
+  const [measurements, setMeasurements] = useState<TestMeasurement[]>([]);
+  const [activePlot, setActivePlot] = useState<'speed' | 'current' | 'torque' | 'temp' | 'voltage'>('speed');
+  const [isLoadingPlot, setIsLoadingPlot] = useState(false);
 
-  const handleCreate = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!title.trim()) return;
+  // Confirmation modal state
+  const [confirmState, setConfirmState] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
 
-    const newExp: Omit<ExperimentLog, 'id'> = {
-      title,
-      objective,
-      date: new Date().toISOString().split('T')[0],
-      conductedBy: state.currentUser.name,
-      hardwareSetup: 'Custom 4-Layer Inverter v1.1 + STM32G4 Core',
-      motorUsed,
-      supplyVoltageV: Number(supplyVoltageV),
-      supplyCurrentA: 5,
-      pwmFrequencyKhz: Number(pwmFrequencyKhz),
-      motorSpeedRpm: 1200,
-      loadTorqueNm: 0.5,
-      gearRatio: '10:1 Planetary Reducer',
-      controllerSettings: '20kHz FOC, Ki=0.15, Kp=2.4',
-      expectedResult,
-      actualResult,
-      observations,
-      problemsEncountered: 'None reported.',
-      conclusion: 'Test completed successfully.',
-      nextAction,
-      dataPoints: [
-        { timeMs: 0, targetCurrentA: 0, measuredCurrentA: 0, tempC: 25 },
-        { timeMs: 10, targetCurrentA: 5, measuredCurrentA: 4.8, tempC: 26 },
-        { timeMs: 20, targetCurrentA: 5, measuredCurrentA: 5.1, tempC: 27 },
-        { timeMs: 30, targetCurrentA: 5, measuredCurrentA: 5.0, tempC: 28 },
-        { timeMs: 40, targetCurrentA: 0, measuredCurrentA: 0.2, tempC: 29 },
-      ],
-      tags: ['TestBench', 'FOC']
-    };
+  useEffect(() => {
+    if (!selectedTestId && tests.length > 0) {
+      setSelectedTestId(tests[0].id);
+    }
+  }, [tests, selectedTestId]);
 
-    onAddExperiment(newExp);
-    setTitle('');
-    setShowAddModal(false);
+  useEffect(() => {
+    if (selectedTestId) {
+      setIsLoadingPlot(true);
+      api
+        .getTestMeasurements(selectedTestId)
+        .then((data) => setMeasurements(data))
+        .catch(() => setMeasurements([]))
+        .finally(() => setIsLoadingPlot(false));
+    } else {
+      setMeasurements([]);
+    }
+  }, [selectedTestId]);
+
+  const selectedTest = tests.find((t) => t.id === selectedTestId);
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'Passed':
+        return isDark
+          ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30 font-semibold'
+          : 'bg-emerald-100 text-emerald-800 border-emerald-300 font-semibold';
+      case 'Failed':
+        return isDark
+          ? 'bg-rose-500/15 text-rose-400 border-rose-500/30 font-semibold'
+          : 'bg-rose-100 text-rose-800 border-rose-300 font-semibold';
+      case 'In Progress':
+        return isDark
+          ? 'bg-sky-500/15 text-sky-400 border-sky-500/30 font-semibold'
+          : 'bg-sky-100 text-sky-800 border-sky-300 font-semibold';
+      case 'Inconclusive':
+      default:
+        return isDark
+          ? 'bg-amber-500/15 text-amber-400 border-amber-500/30 font-semibold'
+          : 'bg-amber-100 text-amber-800 border-amber-300 font-semibold';
+    }
+  };
+
+  const cardBgClass = isDark
+    ? 'bg-slate-900/90 border-slate-800 text-slate-100'
+    : 'bg-white border-slate-200 text-slate-900 shadow-sm';
+
+  const confirmDeleteTest = (test: TestItem) => {
+    setConfirmState({
+      isOpen: true,
+      title: 'Move Test Record to Trash?',
+      message: `Are you sure you want to move test run "${test.test_name}" and its measurements to the Trash Vault? It can be recovered anytime.`,
+      onConfirm: () => {
+        onDeleteTest(test.id);
+        if (selectedTestId === test.id) {
+          setSelectedTestId(null);
+        }
+        setConfirmState((prev) => ({ ...prev, isOpen: false }));
+      },
+    });
   };
 
   return (
     <div className="space-y-6 pb-12">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-bold tracking-tight flex items-center gap-2">
-            <FlaskConical className="w-5 h-5 text-cyan-400" />
-            <span>Experiments & Dynamometer Test Log</span>
-          </h2>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Record motor test bench runs, phase current step response, thermal rise, and planetary gearbox efficiency measurements.
+      <div className={`p-6 md:p-7 rounded-2xl border transition-all ${cardBgClass}`}>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2.5 mb-1">
+              <FlaskConical className="w-6 h-6 text-cyan-600 dark:text-cyan-400" />
+              <h1 className={`text-2xl font-bold tracking-tight ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
+                Testing & Experimental Results
+              </h1>
+            </div>
+            <p className={`text-sm max-w-xl font-normal leading-relaxed ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
+              Record experimental motor runs, dyno measurements, thermal tests, and upload CSV datasets for time-series visualization.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onOpenNewTest}
+              className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white shadow-sm transition-all"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Log Test / Upload CSV</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Summary KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className={`p-5 rounded-2xl border transition-all ${cardBgClass}`}>
+          <span className={`text-xs font-semibold ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>Total Tests Logged</span>
+          <p className="text-2xl font-bold font-mono mt-1">{stats.totalTests}</p>
+        </div>
+
+        <div className={`p-5 rounded-2xl border transition-all ${cardBgClass}`}>
+          <span className={`text-xs font-semibold ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>Successful Passes</span>
+          <p className="text-2xl font-bold font-mono mt-1 text-emerald-600 dark:text-emerald-400">{stats.completedTests}</p>
+        </div>
+
+        <div className={`p-5 rounded-2xl border transition-all ${cardBgClass}`}>
+          <span className={`text-xs font-semibold ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>Pass Rate</span>
+          <p className="text-2xl font-bold font-mono mt-1 text-cyan-600 dark:text-cyan-400">
+            {stats.totalTests > 0 ? Math.round((stats.completedTests / stats.totalTests) * 100) : 0}%
           </p>
         </div>
 
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white text-xs font-semibold shadow-md shadow-cyan-500/20"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Record Experiment</span>
-        </button>
+        <div className={`p-5 rounded-2xl border transition-all ${cardBgClass}`}>
+          <span className={`text-xs font-semibold ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>Active Selection Datasets</span>
+          <p className="text-2xl font-bold font-mono mt-1 text-purple-600 dark:text-purple-400">
+            {measurements.length} pts
+          </p>
+        </div>
       </div>
 
-      {/* Main Grid: Experiment List & Waveform Plot Inspector */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left: Test Run Selector (1 col) */}
-        <div className="space-y-3">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
-            Log Records ({state.experiments.length})
-          </h3>
-
-          {state.experiments.map(exp => {
-            const isSelected = selectedExp?.id === exp.id;
-            return (
-              <div
-                key={exp.id}
-                onClick={() => setSelectedExp(exp)}
-                className={`p-4 rounded-xl border cursor-pointer transition-all ${
-                  isSelected
-                    ? 'bg-cyan-500/15 border-cyan-500 text-cyan-300 ring-1 ring-cyan-500/30'
-                    : isDark ? 'bg-slate-900/90 border-slate-800 hover:border-slate-700' : 'bg-white border-slate-200'
-                }`}
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[10px] text-cyan-400 font-mono">{exp.date}</span>
-                  <span className="text-[10px] text-slate-400">{exp.motorUsed}</span>
-                </div>
-                <h4 className="text-xs font-bold text-slate-100">{exp.title}</h4>
-                <p className="text-[10px] text-slate-400 line-clamp-2 mt-1">{exp.objective}</p>
-              </div>
-            );
-          })}
+      {/* Main Workspace: Left Test List & Right Dynamic Charts */}
+      {tests.length === 0 ? (
+        <div className={`p-12 md:p-16 text-center rounded-2xl border border-dashed ${isDark ? 'border-slate-800 bg-slate-900/30' : 'border-slate-300 bg-slate-50'}`}>
+          <FlaskConical className={`w-10 h-10 mx-auto mb-3 ${isDark ? 'text-slate-600' : 'text-slate-400'}`} />
+          <h3 className={`text-base font-bold ${isDark ? 'text-slate-300' : 'text-slate-800'}`}>No test runs recorded</h3>
+          <p className={`text-sm max-w-sm mx-auto mt-1 leading-relaxed ${isDark ? 'text-slate-500' : 'text-slate-600'}`}>
+            Add manual test logs or upload hardware CSV data from dyno testing to graph speed, torque, current, and temperature curves.
+          </p>
+          <button
+            onClick={onOpenNewTest}
+            className="mt-4 inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white shadow-sm transition-all"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Record First Test</span>
+          </button>
         </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left: Test Run List (1 Col) */}
+          <div className={`p-5 rounded-2xl border flex flex-col justify-between ${cardBgClass}`}>
+            <h3 className={`text-sm font-bold uppercase tracking-wider mb-3 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+              Experimental Runs ({tests.length})
+            </h3>
 
-        {/* Right: Selected Experiment Detailed Report & Chart (2 cols) */}
-        {selectedExp && (
-          <div className={`lg:col-span-2 p-6 rounded-2xl border ${
-            isDark ? 'bg-slate-900/90 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-900'
-          }`}>
-            <div className="border-b border-slate-800 pb-4 mb-4">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] font-mono text-cyan-400 font-bold uppercase">
-                  Experiment Log #{selectedExp.id}
-                </span>
-                <span className="text-xs text-slate-400">Conducted By: {selectedExp.conductedBy}</span>
-              </div>
-              <h3 className="text-lg font-bold text-slate-100">{selectedExp.title}</h3>
-            </div>
+            <div className="space-y-2 max-h-[580px] overflow-y-auto pr-1">
+              {tests.map((t) => {
+                const isSelected = t.id === selectedTestId;
+                return (
+                  <div
+                    key={t.id}
+                    onClick={() => setSelectedTestId(t.id)}
+                    className={`p-3.5 rounded-xl border text-sm cursor-pointer transition-all ${
+                      isSelected
+                        ? isDark
+                          ? 'bg-cyan-500/10 border-cyan-500/40 text-slate-100 shadow-sm'
+                          : 'bg-cyan-50 border-cyan-300 text-slate-900 shadow-sm'
+                        : isDark
+                        ? 'bg-slate-950/60 border-slate-800/80 hover:border-slate-700 text-slate-300'
+                        : 'bg-slate-50 border-slate-200 hover:border-slate-300 text-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${getStatusBadge(t.status)}`}>
+                        {t.status}
+                      </span>
+                      <span className={`text-xs font-mono ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                        {t.date}
+                      </span>
+                    </div>
 
-            {/* Test Setup Parameters Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs mb-6">
-              <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800">
-                <span className="text-[10px] text-slate-400 block">Supply Voltage</span>
-                <span className="font-mono font-bold text-cyan-400">{selectedExp.supplyVoltageV} V</span>
-              </div>
-              <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800">
-                <span className="text-[10px] text-slate-400 block">PWM Frequency</span>
-                <span className="font-mono font-bold text-purple-400">{selectedExp.pwmFrequencyKhz} kHz</span>
-              </div>
-              <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800">
-                <span className="text-[10px] text-slate-400 block">Motor Speed</span>
-                <span className="font-mono font-bold text-sky-400">{selectedExp.motorSpeedRpm} RPM</span>
-              </div>
-              <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800">
-                <span className="text-[10px] text-slate-400 block">Gear Ratio</span>
-                <span className="font-mono font-bold text-emerald-400">{selectedExp.gearRatio}</span>
-              </div>
-            </div>
+                    <h4 className={`font-bold truncate mb-1 ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
+                      {t.test_name}
+                    </h4>
 
-            {/* Waveform Chart (if data points exist) */}
-            {selectedExp.dataPoints && selectedExp.dataPoints.length > 0 && (
-              <div className="mb-6 p-4 rounded-xl bg-slate-950/60 border border-slate-800">
-                <h4 className="text-xs font-bold text-slate-200 mb-3 flex items-center justify-between">
-                  <span>Current / Telemetry Waveform Data</span>
-                  <span className="text-[10px] font-mono text-cyan-400">Step Response</span>
-                </h4>
-                <div className="h-56 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={selectedExp.dataPoints}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                      <XAxis dataKey="timeMs" stroke="#94a3b8" fontSize={10} unit="ms" />
-                      <YAxis stroke="#94a3b8" fontSize={10} />
-                      <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px', fontSize: '11px' }} />
-                      <Legend wrapperStyle={{ fontSize: '11px' }} />
-                      {selectedExp.dataPoints[0].targetCurrentA !== undefined && (
-                        <Line type="monotone" dataKey="targetCurrentA" name="Target Current (A)" stroke="#38bdf8" strokeWidth={2} dot={false} />
-                      )}
-                      {selectedExp.dataPoints[0].measuredCurrentA !== undefined && (
-                        <Line type="monotone" dataKey="measuredCurrentA" name="Measured Current (A)" stroke="#f43f5e" strokeWidth={2} />
-                      )}
-                      {selectedExp.dataPoints[0].tempC !== undefined && (
-                        <Line type="monotone" dataKey="tempC" name="Temp (°C)" stroke="#fbbf24" strokeWidth={2} />
-                      )}
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            )}
-
-            {/* Expected vs Actual & Observations */}
-            <div className="space-y-3 text-xs">
-              <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800">
-                <span className="text-[10px] font-bold uppercase text-emerald-400 block mb-1">Expected Result</span>
-                <p className="text-slate-300">{selectedExp.expectedResult}</p>
-              </div>
-
-              <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800">
-                <span className="text-[10px] font-bold uppercase text-amber-400 block mb-1">Actual Measured Result</span>
-                <p className="text-slate-300">{selectedExp.actualResult}</p>
-              </div>
-
-              <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800">
-                <span className="text-[10px] font-bold uppercase text-cyan-400 block mb-1">Engineering Observations</span>
-                <p className="text-slate-300">{selectedExp.observations}</p>
-              </div>
-
-              <div className="p-3 rounded-xl bg-cyan-950/30 border border-cyan-500/30">
-                <span className="text-[10px] font-bold uppercase text-cyan-300 block mb-1">Next Action Required</span>
-                <p className="text-cyan-200 font-semibold">{selectedExp.nextAction}</p>
-              </div>
+                    <div className={`flex items-center justify-between text-xs pt-1 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+                      <span>{t.test_type}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono">{t.measurement_count || 0} pts</span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            confirmDeleteTest(t);
+                          }}
+                          className={`p-1 transition-colors ${isDark ? 'hover:text-rose-400 text-slate-500' : 'hover:text-rose-600 text-slate-400'}`}
+                          title="Move to Trash"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
-        )}
-      </div>
 
-      {/* Add Experiment Modal */}
-      {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
-          <div className={`w-full max-w-xl rounded-2xl border p-6 ${isDark ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white'}`}>
-            <h3 className="text-sm font-bold mb-4">Record New Dynamometer Experiment Run</h3>
-            <form onSubmit={handleCreate} className="space-y-3 text-xs">
-              <div>
-                <label className="block font-semibold mb-1">Experiment Title *</label>
-                <input type="text" required value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Phase Current Step Response Test" className={`w-full p-2 rounded-xl border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50'}`} />
-              </div>
-              <div>
-                <label className="block font-semibold mb-1">Objective</label>
-                <input type="text" value={objective} onChange={(e) => setObjective(e.target.value)} placeholder="Objective of test..." className={`w-full p-2 rounded-xl border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50'}`} />
-              </div>
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="block font-semibold mb-1">Motor Used</label>
-                  <input type="text" value={motorUsed} onChange={(e) => setMotorUsed(e.target.value)} className={`w-full p-2 rounded-xl border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50'}`} />
+          {/* Right: Selected Test Details & Interactive Chart (2 Cols) */}
+          <div className={`lg:col-span-2 p-6 md:p-7 rounded-2xl border flex flex-col justify-between ${cardBgClass}`}>
+            {selectedTest ? (
+              <div className="space-y-6">
+                {/* Test Metadata Header */}
+                <div className={`flex flex-col md:flex-row md:items-start justify-between gap-4 pb-4 border-b ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
+                  <div>
+                    <div className="flex items-center gap-2.5 mb-1.5">
+                      <span className="text-xs font-bold text-cyan-600 dark:text-cyan-400 uppercase tracking-wider">
+                        {selectedTest.test_type}
+                      </span>
+                      <span className={`px-2.5 py-0.5 rounded-md text-xs font-semibold border ${getStatusBadge(selectedTest.status)}`}>
+                        {selectedTest.status}
+                      </span>
+                    </div>
+                    <h2 className={`text-xl font-bold ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
+                      {selectedTest.test_name}
+                    </h2>
+                    <p className={`text-sm mt-1 max-w-xl leading-relaxed ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                      {selectedTest.observations || selectedTest.result || 'No observation notes entered.'}
+                    </p>
+                  </div>
+
+                  <div className={`text-right text-xs space-y-1 font-mono ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+                    <div>Date: {selectedTest.date}</div>
+                    {selectedTest.performed_by_name && (
+                      <div>Conducted by: {selectedTest.performed_by_name}</div>
+                    )}
+                  </div>
                 </div>
-                <div>
-                  <label className="block font-semibold mb-1">Bus Voltage (V)</label>
-                  <input type="number" value={supplyVoltageV} onChange={(e) => setSupplyVoltageV(Number(e.target.value))} className={`w-full p-2 rounded-xl border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50'}`} />
-                </div>
-                <div>
-                  <label className="block font-semibold mb-1">PWM Freq (kHz)</label>
-                  <input type="number" value={pwmFrequencyKhz} onChange={(e) => setPwmFrequencyKhz(Number(e.target.value))} className={`w-full p-2 rounded-xl border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50'}`} />
+
+                {/* Operating Parameters */}
+                {(selectedTest.supply_voltage_v || selectedTest.supply_current_a || selectedTest.pwm_freq_khz || selectedTest.hardware_setup) && (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+                    {selectedTest.supply_voltage_v && (
+                      <div className={`p-3.5 rounded-xl border ${isDark ? 'border-slate-800 bg-slate-950/60' : 'border-slate-200 bg-slate-50'}`}>
+                        <span className={`text-xs block ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>Supply Voltage</span>
+                        <span className={`text-base font-bold font-mono mt-0.5 block ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
+                          {selectedTest.supply_voltage_v} V
+                        </span>
+                      </div>
+                    )}
+                    {selectedTest.supply_current_a && (
+                      <div className={`p-3.5 rounded-xl border ${isDark ? 'border-slate-800 bg-slate-950/60' : 'border-slate-200 bg-slate-50'}`}>
+                        <span className={`text-xs block ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>Supply Current</span>
+                        <span className={`text-base font-bold font-mono mt-0.5 block ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
+                          {selectedTest.supply_current_a} A
+                        </span>
+                      </div>
+                    )}
+                    {selectedTest.pwm_freq_khz && (
+                      <div className={`p-3.5 rounded-xl border ${isDark ? 'border-slate-800 bg-slate-950/60' : 'border-slate-200 bg-slate-50'}`}>
+                        <span className={`text-xs block ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>PWM Frequency</span>
+                        <span className={`text-base font-bold font-mono mt-0.5 block ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
+                          {selectedTest.pwm_freq_khz} kHz
+                        </span>
+                      </div>
+                    )}
+                    {selectedTest.hardware_setup && (
+                      <div className={`p-3.5 rounded-xl border ${isDark ? 'border-slate-800 bg-slate-950/60' : 'border-slate-200 bg-slate-50'}`}>
+                        <span className={`text-xs block ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>Hardware Setup</span>
+                        <span className={`text-sm font-semibold truncate mt-0.5 block ${isDark ? 'text-slate-100' : 'text-slate-900'}`} title={selectedTest.hardware_setup}>
+                          {selectedTest.hardware_setup}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Plot Controls & Multi-Curve Graph */}
+                <div className="space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <h3 className={`text-sm font-bold uppercase tracking-wider ${isDark ? 'text-slate-400' : 'text-slate-700'}`}>
+                      Measurement Response Curves
+                    </h3>
+
+                    {measurements.length > 0 && (
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <button
+                          onClick={() => setActivePlot('speed')}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                            activePlot === 'speed'
+                              ? 'bg-cyan-600 text-white shadow-sm'
+                              : isDark ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                          }`}
+                        >
+                          Speed (RPM)
+                        </button>
+                        <button
+                          onClick={() => setActivePlot('current')}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                            activePlot === 'current'
+                              ? 'bg-sky-600 text-white shadow-sm'
+                              : isDark ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                          }`}
+                        >
+                          Current (A)
+                        </button>
+                        <button
+                          onClick={() => setActivePlot('torque')}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                            activePlot === 'torque'
+                              ? 'bg-amber-600 text-white shadow-sm'
+                              : isDark ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                          }`}
+                        >
+                          Torque (Nm)
+                        </button>
+                        <button
+                          onClick={() => setActivePlot('temp')}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                            activePlot === 'temp'
+                              ? 'bg-rose-600 text-white shadow-sm'
+                              : isDark ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                          }`}
+                        >
+                          Temp (°C)
+                        </button>
+                        <button
+                          onClick={() => setActivePlot('voltage')}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                            activePlot === 'voltage'
+                              ? 'bg-purple-600 text-white shadow-sm'
+                              : isDark ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                          }`}
+                        >
+                          Voltage (V)
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {isLoadingPlot ? (
+                    <div className="h-72 flex items-center justify-center text-sm text-slate-400">
+                      Loading high-frequency measurement data...
+                    </div>
+                  ) : measurements.length === 0 ? (
+                    <div className={`h-72 flex flex-col items-center justify-center rounded-xl border text-center p-6 ${
+                      isDark ? 'border-slate-800/80 bg-slate-950/40 text-slate-400' : 'border-slate-200 bg-slate-50 text-slate-600'
+                    }`}>
+                      <p className="text-sm font-semibold">No raw time-series measurements recorded for this run.</p>
+                      <p className="text-xs mt-1">Upload a CSV file during test creation to generate instant performance graphs.</p>
+                    </div>
+                  ) : (
+                    <div className="h-80 w-full pt-2">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={measurements} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke={isDark ? '#334155' : '#e2e8f0'} />
+                          <XAxis
+                            dataKey="time_ms"
+                            unit="ms"
+                            stroke={isDark ? '#94a3b8' : '#475569'}
+                            fontSize={11}
+                          />
+                          <YAxis
+                            stroke={isDark ? '#94a3b8' : '#475569'}
+                            fontSize={11}
+                          />
+                          <Tooltip
+                            contentStyle={{
+                              backgroundColor: isDark ? '#0f172a' : '#ffffff',
+                              borderColor: isDark ? '#334155' : '#cbd5e1',
+                              borderRadius: '12px',
+                              fontSize: '12px',
+                              boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
+                            }}
+                          />
+                          <Legend wrapperStyle={{ fontSize: '12px' }} />
+                          {activePlot === 'speed' && (
+                            <Line
+                              type="monotone"
+                              dataKey="speed_rpm"
+                              name="Speed (RPM)"
+                              stroke="#06b6d4"
+                              strokeWidth={2.5}
+                              dot={false}
+                            />
+                          )}
+                          {activePlot === 'current' && (
+                            <Line
+                              type="monotone"
+                              dataKey="current_a"
+                              name="Current (A)"
+                              stroke="#0284c7"
+                              strokeWidth={2.5}
+                              dot={false}
+                            />
+                          )}
+                          {activePlot === 'torque' && (
+                            <Line
+                              type="monotone"
+                              dataKey="torque_nm"
+                              name="Torque (Nm)"
+                              stroke="#d97706"
+                              strokeWidth={2.5}
+                              dot={false}
+                            />
+                          )}
+                          {activePlot === 'temp' && (
+                            <Line
+                              type="monotone"
+                              dataKey="temp_c"
+                              name="Temperature (°C)"
+                              stroke="#e11d48"
+                              strokeWidth={2.5}
+                              dot={false}
+                            />
+                          )}
+                          {activePlot === 'voltage' && (
+                            <Line
+                              type="monotone"
+                              dataKey="voltage_v"
+                              name="Voltage (V)"
+                              stroke="#9333ea"
+                              strokeWidth={2.5}
+                              dot={false}
+                            />
+                          )}
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
                 </div>
               </div>
-              <div>
-                <label className="block font-semibold mb-1">Expected vs Actual Results</label>
-                <div className="grid grid-cols-2 gap-3">
-                  <input type="text" value={expectedResult} onChange={(e) => setExpectedResult(e.target.value)} placeholder="Expected..." className={`w-full p-2 rounded-xl border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50'}`} />
-                  <input type="text" value={actualResult} onChange={(e) => setActualResult(e.target.value)} placeholder="Actual..." className={`w-full p-2 rounded-xl border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50'}`} />
-                </div>
+            ) : (
+              <div className="h-64 flex items-center justify-center text-sm text-slate-400">
+                Select a test run to inspect measurement results.
               </div>
-              <div>
-                <label className="block font-semibold mb-1">Observations & Next Action</label>
-                <div className="grid grid-cols-2 gap-3">
-                  <input type="text" value={observations} onChange={(e) => setObservations(e.target.value)} placeholder="Observations..." className={`w-full p-2 rounded-xl border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50'}`} />
-                  <input type="text" value={nextAction} onChange={(e) => setNextAction(e.target.value)} placeholder="Next step..." className={`w-full p-2 rounded-xl border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50'}`} />
-                </div>
-              </div>
-              <div className="flex justify-end gap-3 pt-2">
-                <button type="button" onClick={() => setShowAddModal(false)} className="px-4 py-2 rounded-xl border border-slate-800 text-slate-400">Cancel</button>
-                <button type="submit" className="px-5 py-2 rounded-xl bg-cyan-500 text-slate-950 font-bold">Record Experiment</button>
-              </div>
-            </form>
+            )}
           </div>
         </div>
       )}
+
+      {/* Confirmation Modal */}
+      <ConfirmModal
+        isOpen={confirmState.isOpen}
+        onClose={() => setConfirmState((prev) => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmState.onConfirm}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmText="Move to Trash"
+        confirmVariant="danger"
+        theme={state.theme}
+      />
     </div>
   );
 };

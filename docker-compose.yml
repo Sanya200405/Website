@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  projectdrive:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: projectdrive-app
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - DATA_DIR=/app/data
+      - UPLOADS_DIR=/app/uploads
+      - JWT_SECRET=foc_drive_jwt_secret_key_2026
+      # Add optional GitHub token for higher rate limits:
+      # - GITHUB_TOKEN=your_github_pat
+    volumes:
+      # Persistent named volumes to preserve database and uploads across container upgrades
+      - projectdrive_data:/app/data
+      - projectdrive_uploads:/app/uploads
+
+volumes:
+  projectdrive_data:
+    driver: local
+  projectdrive_uploads:
+    driver: local
