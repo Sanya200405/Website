@@ -27,6 +27,7 @@ import {
   type SimulationModel,
   type GitHubRepoData,
   type GitHubCommitData,
+  type MeetingItem,
 } from './api';
 
 const THEME_KEY = 'foc_drive_theme';
@@ -44,6 +45,7 @@ export interface AppState {
   tasks: TaskItem[];
   tests: TestItem[];
   simulations: SimulationModel[];
+  meetings: MeetingItem[];
   gitHubRepo: GitHubRepoData | null;
   gitHubCommits: GitHubCommitData[];
   issues: IssueItem[];
@@ -117,6 +119,7 @@ export function useProjectStore() {
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [tests, setTests] = useState<TestItem[]>([]);
   const [simulations, setSimulations] = useState<SimulationModel[]>([]);
+  const [meetings, setMeetings] = useState<MeetingItem[]>([]);
   const [gitHubRepo, setGitHubRepo] = useState<GitHubRepoData | null>(null);
   const [gitHubCommits, setGitHubCommits] = useState<GitHubCommitData[]>([]);
   const [issues, setIssues] = useState<IssueItem[]>([]);
@@ -167,6 +170,7 @@ export function useProjectStore() {
         tasksData,
         testsData,
         simulationsData,
+        meetingsData,
         githubRepoData,
         githubCommitsData,
         issuesData,
@@ -186,6 +190,7 @@ export function useProjectStore() {
         api.getTasks().catch(() => []),
         api.getTests().catch(() => []),
         api.getSimulations().catch(() => []),
+        api.getMeetings().catch(() => []),
         api.getGitHubRepo().catch(() => null),
         api.getGitHubCommits().catch(() => []),
         api.getIssues().catch(() => []),
@@ -206,6 +211,7 @@ export function useProjectStore() {
       setTasks(tasksData);
       setTests(testsData);
       setSimulations(simulationsData);
+      setMeetings(meetingsData);
       setGitHubRepo(githubRepoData);
       setGitHubCommits(githubCommitsData);
       setIssues(issuesData);
@@ -215,6 +221,7 @@ export function useProjectStore() {
       setEngineeringNotes(notesData);
       setReportSections(sectionsData);
       setActivities(activitiesData);
+
 
       // Load Trash items if authenticated
       if (token) {
@@ -522,6 +529,24 @@ export function useProjectStore() {
     await fetchAllData();
   };
 
+  // --- Team Meetings ---
+  const addMeeting = async (data: Partial<MeetingItem>) => {
+    const newMeeting = await api.addMeeting({ ...data, user_name: currentUserName });
+    await fetchAllData();
+    return newMeeting;
+  };
+
+  const updateMeeting = async (id: string, data: Partial<MeetingItem>) => {
+    const updated = await api.updateMeeting(id, { ...data, user_name: currentUserName });
+    await fetchAllData();
+    return updated;
+  };
+
+  const deleteMeeting = async (id: string) => {
+    await api.deleteMeeting(id);
+    await fetchAllData();
+  };
+
   const updateProjectDetails = async (data: Partial<ProjectInfo>) => {
     const updated = await api.updateProject({ ...data, user_name: currentUserName });
     await fetchAllData();
@@ -627,6 +652,7 @@ export function useProjectStore() {
       tasks,
       tests,
       simulations,
+      meetings,
       gitHubRepo,
       gitHubCommits,
       issues,
@@ -669,6 +695,9 @@ export function useProjectStore() {
     deleteSimulation,
     linkSimulationExperiment,
     unlinkSimulationExperiment,
+    addMeeting,
+    updateMeeting,
+    deleteMeeting,
     addIssue,
     updateIssue,
     deleteIssue,
@@ -706,3 +735,4 @@ export function useProjectStore() {
     adminDeleteStorageFile,
   };
 }
+

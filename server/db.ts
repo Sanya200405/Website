@@ -320,6 +320,23 @@ export function initDatabase() {
       manifest_json TEXT,
       created_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS meetings (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      date TEXT NOT NULL,
+      start_time TEXT NOT NULL,
+      end_time TEXT,
+      meeting_link TEXT,
+      location TEXT,
+      description TEXT,
+      notes TEXT,
+      reminder TEXT DEFAULT 'none',
+      created_by_id TEXT REFERENCES team_members(id) ON DELETE SET NULL,
+      deleted_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
   `);
 
   // Column migrations for existing tables
@@ -340,6 +357,8 @@ export function initDatabase() {
   try { db.exec("ALTER TABLE issues ADD COLUMN deleted_at TEXT"); } catch (_) {}
   try { db.exec("ALTER TABLE milestones ADD COLUMN deleted_at TEXT"); } catch (_) {}
   try { db.exec("ALTER TABLE simulation_models ADD COLUMN deleted_at TEXT"); } catch (_) {}
+  try { db.exec("ALTER TABLE meetings ADD COLUMN reminder TEXT DEFAULT 'none'"); } catch (_) {}
+  try { db.exec("ALTER TABLE meetings ADD COLUMN deleted_at TEXT"); } catch (_) {}
 
   // Ensure default project configuration exists
   const project = db.prepare('SELECT * FROM projects WHERE id = ?').get('proj_foc_main');

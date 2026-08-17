@@ -195,3 +195,21 @@ CREATE TABLE IF NOT EXISTS report_links (
     entity_title TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+
+-- 15. Team Meetings Table
+CREATE TABLE IF NOT EXISTS meetings (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    date TEXT NOT NULL,
+    start_time TEXT NOT NULL,
+    end_time TEXT,
+    meeting_link TEXT,
+    location TEXT,
+    description TEXT,
+    notes TEXT,
+    reminder TEXT DEFAULT 'none',
+    created_by_id TEXT REFERENCES team_members(id) ON DELETE SET NULL,
+    deleted_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);

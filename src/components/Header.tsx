@@ -13,6 +13,7 @@ import {
   LogIn,
   LogOut,
   ShieldCheck,
+  Calendar,
 } from 'lucide-react';
 import type { TeamMember } from '../services/api';
 import { UserAvatar } from './UserAvatar';
@@ -29,6 +30,7 @@ interface HeaderProps {
   onOpenNewPaper: () => void;
   onOpenNewResource: () => void;
   onOpenNewNote: () => void;
+  onOpenNewMeeting?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -43,6 +45,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenNewPaper,
   onOpenNewResource,
   onOpenNewNote,
+  onOpenNewMeeting,
 }) => {
   const isDark = theme === 'dark';
   const [showUserDropdown, setShowUserDropdown] = useState(false);
@@ -118,6 +121,20 @@ export const Header: React.FC<HeaderProps> = ({
                   <Award className="w-4 h-4 text-purple-600 dark:text-purple-400" />
                   <span>New Milestone</span>
                 </button>
+                {onOpenNewMeeting && (
+                  <button
+                    onClick={() => {
+                      setShowQuickAddDropdown(false);
+                      onOpenNewMeeting();
+                    }}
+                    className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left transition-colors font-medium ${
+                      isDark ? 'hover:bg-slate-800 text-slate-200' : 'hover:bg-slate-100 text-slate-800'
+                    }`}
+                  >
+                    <Calendar className="w-4 h-4 text-indigo-500 dark:text-indigo-400" />
+                    <span>Schedule Meeting</span>
+                  </button>
+                )}
                 <div className={`my-1.5 border-t ${isDark ? 'border-slate-800' : 'border-slate-100'}`} />
                 <button
                   onClick={() => {

@@ -12,6 +12,7 @@ import {
   Settings,
   ShieldCheck,
   Cpu,
+  Calendar,
 } from 'lucide-react';
 import type { AppState } from '../services/store';
 
@@ -22,6 +23,7 @@ export type NavSection =
   | 'development'
   | 'testing'
   | 'team'
+  | 'meetings'
   | 'issues'
   | 'knowledge'
   | 'report'
@@ -50,8 +52,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   state,
 }) => {
   const isDark = state.theme === 'dark';
-  const { stats, currentUser, researchPapers, reportSections, simulations } = state;
+  const { stats, currentUser, researchPapers, reportSections, simulations, meetings } = state;
   const isAdmin = currentUser?.role === 'admin';
+
+  const todayStr = new Date().toISOString().split('T')[0];
+  const upcomingCount = (meetings || []).filter((m) => m.date >= todayStr).length;
 
   const workspaceNav: NavItem[] = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -60,6 +65,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'development', label: 'Development & Simulink', icon: Cpu, badge: simulations.length > 0 ? simulations.length : undefined },
     { id: 'testing', label: 'Testing & Results', icon: FlaskConical, badge: stats.totalTests > 0 ? stats.totalTests : undefined },
     { id: 'team', label: 'Team', icon: Users, badge: (stats.totalTeamMembers && stats.totalTeamMembers > 0) ? stats.totalTeamMembers : undefined },
+    {
+      id: 'meetings',
+      label: 'Team Meetings',
+      icon: Calendar,
+      badge: upcomingCount > 0 ? upcomingCount : undefined,
+      badgeColor: isDark
+        ? 'bg-cyan-500/15 text-cyan-400 border border-cyan-500/30 font-semibold'
+        : 'bg-cyan-100 text-cyan-800 border border-cyan-300 font-semibold',
+    },
     {
       id: 'issues',
       label: 'Issues / Blockers',

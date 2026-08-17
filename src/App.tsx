@@ -15,6 +15,7 @@ import { ResearchPaperModal } from './components/ResearchPaperModal';
 import { LearningResourceModal } from './components/LearningResourceModal';
 import { NoteModal } from './components/NoteModal';
 import { ReportLinkModal } from './components/ReportLinkModal';
+import { ScheduleMeetingModal } from './components/ScheduleMeetingModal';
 
 import type {
   TaskItem,
@@ -25,6 +26,7 @@ import type {
   LearningResource,
   EngineeringNote,
   SimulationModel,
+  MeetingItem,
 } from './services/api';
 
 // Dedicated Views
@@ -33,6 +35,7 @@ import { RoadmapView } from './views/RoadmapView';
 import { TasksView } from './views/TasksView';
 import { DevelopmentView } from './views/DevelopmentView';
 import { TeamView } from './views/TeamView';
+import { MeetingsView } from './views/MeetingsView';
 import { ExperimentsView } from './views/ExperimentsView';
 import { IssuesView } from './views/IssuesView';
 import { KnowledgeView } from './views/KnowledgeView';
@@ -64,6 +67,9 @@ export function App() {
     addSimulation,
     updateSimulation,
     deleteSimulation,
+    addMeeting,
+    updateMeeting,
+    deleteMeeting,
     addIssue,
     updateIssue,
     deleteIssue,
@@ -107,6 +113,10 @@ export function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
   // Modals state
+  const [isMeetingModalOpen, setIsMeetingModalOpen] = useState(false);
+  const [selectedMeeting, setSelectedMeeting] = useState<MeetingItem | null>(null);
+  const [initialMeetingDate, setInitialMeetingDate] = useState<string | undefined>(undefined);
+
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<TaskItem | null>(null);
 
@@ -235,6 +245,18 @@ export function App() {
     setIsReportLinkModalOpen(true);
   };
 
+  const handleOpenNewMeeting = (initialDate?: string) => {
+    setSelectedMeeting(null);
+    setInitialMeetingDate(initialDate);
+    setIsMeetingModalOpen(true);
+  };
+
+  const handleEditMeeting = (meeting: MeetingItem) => {
+    setSelectedMeeting(meeting);
+    setInitialMeetingDate(meeting.date);
+    setIsMeetingModalOpen(true);
+  };
+
   const renderActiveView = () => {
     switch (currentNav) {
       case 'dashboard':
@@ -284,6 +306,16 @@ export function App() {
             onOpenNewMember={handleOpenNewMember}
             onEditMember={handleEditMember}
             onDeleteMember={deleteTeamMember}
+          />
+        );
+      case 'meetings':
+        return (
+          <MeetingsView
+            state={state}
+            onOpenNewMeeting={handleOpenNewMeeting}
+            onEditMeeting={handleEditMeeting}
+            onDeleteMeeting={deleteMeeting}
+            onAddEngineeringNote={addEngineeringNote}
           />
         );
       case 'testing':
@@ -399,6 +431,7 @@ export function App() {
           onOpenSearch={() => setIsSearchOpen(true)}
           onOpenNewTask={handleOpenNewTask}
           onOpenNewMilestone={handleOpenNewMilestone}
+          onOpenNewMeeting={() => handleOpenNewMeeting()}
           onOpenNewPaper={handleOpenNewPaper}
           onOpenNewResource={handleOpenNewResource}
           onOpenNewNote={handleOpenNewNote}
@@ -577,6 +610,20 @@ export function App() {
         state={state}
         onAddLink={addReportLink}
         onDeleteLink={deleteReportLink}
+        theme={state.theme}
+      />
+
+      <ScheduleMeetingModal
+        isOpen={isMeetingModalOpen}
+        onClose={() => setIsMeetingModalOpen(false)}
+        onSave={async (data) => {
+          if (selectedMeeting) {
+            return updateMeeting(selectedMeeting.id, data);
+          }
+          return addMeeting(data);
+        }}
+        meeting={selectedMeeting}
+        initialDate={initialMeetingDate}
         theme={state.theme}
       />
     </div>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, X, CheckSquare, Award, FlaskConical, ShieldAlert, FolderGit2, BookOpen, GraduationCap, FileCode2, FileText } from 'lucide-react';
+import { Search, X, CheckSquare, Award, FlaskConical, ShieldAlert, FolderGit2, BookOpen, GraduationCap, FileCode2, FileText, Calendar } from 'lucide-react';
 import type { AppState } from '../services/store';
 import type { NavSection } from './Sidebar';
 
@@ -20,7 +20,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
 }) => {
   const isDark = theme === 'dark';
   const [query, setQuery] = useState('');
-  const { tasks, milestones, tests, issues, documents, researchPapers, learningResources, engineeringNotes, reportSections } = state;
+  const { tasks, milestones, tests, issues, documents, researchPapers, learningResources, engineeringNotes, reportSections, meetings } = state;
 
   useEffect(() => {
     if (!isOpen) setQuery('');
@@ -30,6 +30,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
 
   const q = query.toLowerCase().trim();
 
+  const matchingMeetings = q ? (meetings || []).filter((m) => m.title.toLowerCase().includes(q) || (m.description && m.description.toLowerCase().includes(q)) || (m.location && m.location.toLowerCase().includes(q))) : [];
   const matchingTasks = q ? tasks.filter((t) => t.title.toLowerCase().includes(q) || (t.description && t.description.toLowerCase().includes(q))) : [];
   const matchingMilestones = q ? milestones.filter((m) => m.title.toLowerCase().includes(q) || (m.description && m.description.toLowerCase().includes(q))) : [];
   const matchingPapers = q ? researchPapers.filter((p) => p.title.toLowerCase().includes(q) || (p.authors && p.authors.toLowerCase().includes(q)) || (p.topic && p.topic.toLowerCase().includes(q))) : [];
@@ -41,6 +42,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
   const matchingDocs = q ? documents.filter((d) => d.file_name.toLowerCase().includes(q) || (d.description && d.description.toLowerCase().includes(q))) : [];
 
   const totalResults =
+    matchingMeetings.length +
     matchingTasks.length +
     matchingMilestones.length +
     matchingPapers.length +
@@ -92,6 +94,34 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
             </div>
           ) : (
             <>
+              {matchingMeetings.length > 0 && (
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400 px-2 mb-1.5">
+                    Team Meetings ({matchingMeetings.length})
+                  </div>
+                  {matchingMeetings.map((m) => (
+                    <button
+                      key={m.id}
+                      onClick={() => {
+                        onNavigate('meetings');
+                        onClose();
+                      }}
+                      className={`w-full flex items-center justify-between p-2.5 rounded-xl text-left text-sm transition-colors ${
+                        isDark ? 'hover:bg-slate-800 text-slate-200' : 'hover:bg-slate-100 text-slate-800'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <Calendar className="w-4 h-4 text-cyan-600 dark:text-cyan-400 flex-shrink-0" />
+                        <span className="font-semibold">{m.title}</span>
+                      </div>
+                      <span className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                        {m.date} • {m.start_time}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
               {matchingPapers.length > 0 && (
                 <div>
                   <div className="text-xs font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400 px-2 mb-1.5">

@@ -2072,6 +2072,190 @@ app.get('/api/report/export-docx', async (_req: Request, res: Response) => {
 });
 
 // -------------------------------------------------------------
+// 13.5. Team Meetings
+// -------------------------------------------------------------
+app.get('/api/meetings', (_req: Request, res: Response) => {
+  try {
+    const meetings = db.prepare(`
+      SELECT m.*, tm.name as created_by_name
+      FROM meetings m
+      LEFT JOIN team_members tm ON m.created_by_id = tm.id
+      WHERE m.deleted_at IS NULL
+      ORDER BY m.date ASC, m.start_time ASC
+    `).all();
+    res.json(meetings);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/meetings/:id', (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const meeting = db.prepare(`
+      SELECT m.*, tm.name as created_by_name
+      FROM meetings m
+      LEFT JOIN team_members tm ON m.created_by_id = tm.id
+      WHERE m.id = ? AND m.deleted_at IS NULL
+    `).get(id);
+    if (!meeting) {
+      return res.status(404).json({ error: 'Meeting not found' });
+    }
+    res.json(meeting);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/meetings', requireAuth, (req: AuthRequest, res: Response) => {
+  try {
+    const { title, date, start_time, end_time, meeting_link, location, description, notes, reminder, user_name } = req.body;
+    if (!title || !title.trim()) {
+      return res.status(400).json({ error: 'Meeting title is required' });
+    }
+    if (!date || !date.trim()) {
+      return res.status(400).json({ error: 'Meeting date is required' });
+    }
+    if (!start_time || !start_time.trim()) {
+      return res.status(400).json({ error: 'Meeting start time is required' });
+    }
+
+    // Validate URL if provided
+    let cleanLink = (meeting_link || '').trim();
+    if (cleanLink) {
+      if (!cleanLink.startsWith('http://') && !cleanLink.startsWith('https://')) {
+        cleanLink = 'https://' + cleanLink;
+      }
+      try {
+        new URL(cleanLink);
+      } catch {
+        return res.status(400).json({ error: 'Please enter a valid meeting URL' });
+      }
+    }
+
+    const id = 'mtg_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+    const now = new Date().toISOString();
+
+    db.prepare(`
+      INSERT INTO meetings (
+        id, title, date, start_time, end_time, meeting_link, location, description, notes, reminder, created_by_id, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      title.trim(),
+      date.trim(),
+      start_time.trim(),
+      end_time ? end_time.trim() : '',
+      cleanLink || '',
+      location ? location.trim() : '',
+      description ? description.trim() : '',
+      notes ? notes.trim() : '',
+      reminder || 'none',
+      req.user?.id || null,
+      now,
+      now
+    );
+
+    logActivity(user_name || req.user?.name || 'User', req.user?.id || null, 'scheduled team meeting', 'Meeting', title.trim());
+
+    const newMeeting = db.prepare(`
+      SELECT m.*, tm.name as created_by_name
+      FROM meetings m
+      LEFT JOIN team_members tm ON m.created_by_id = tm.id
+      WHERE m.id = ?
+    `).get(id);
+
+    res.status(201).json(newMeeting);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/meetings/:id', requireAuth, (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { title, date, start_time, end_time, meeting_link, location, description, notes, reminder, user_name } = req.body;
+
+    const existing = db.prepare('SELECT * FROM meetings WHERE id = ?').get(id) as any;
+    if (!existing) {
+      return res.status(404).json({ error: 'Meeting not found' });
+    }
+
+    // Validate URL if provided
+    let cleanLink = meeting_link !== undefined ? (meeting_link || '').trim() : existing.meeting_link;
+    if (cleanLink) {
+      if (!cleanLink.startsWith('http://') && !cleanLink.startsWith('https://')) {
+        cleanLink = 'https://' + cleanLink;
+      }
+      try {
+        new URL(cleanLink);
+      } catch {
+        return res.status(400).json({ error: 'Please enter a valid meeting URL' });
+      }
+    }
+
+    const now = new Date().toISOString();
+
+    db.prepare(`
+      UPDATE meetings
+      SET title = COALESCE(?, title),
+          date = COALESCE(?, date),
+          start_time = COALESCE(?, start_time),
+          end_time = COALESCE(?, end_time),
+          meeting_link = ?,
+          location = COALESCE(?, location),
+          description = COALESCE(?, description),
+          notes = COALESCE(?, notes),
+          reminder = COALESCE(?, reminder),
+          updated_at = ?
+      WHERE id = ?
+    `).run(
+      title ? title.trim() : null,
+      date ? date.trim() : null,
+      start_time ? start_time.trim() : null,
+      end_time !== undefined ? (end_time || '').trim() : null,
+      cleanLink || '',
+      location !== undefined ? (location || '').trim() : null,
+      description !== undefined ? (description || '').trim() : null,
+      notes !== undefined ? (notes || '').trim() : null,
+      reminder !== undefined ? reminder : null,
+      now,
+      id
+    );
+
+    logActivity(user_name || req.user?.name || 'User', req.user?.id || null, 'updated team meeting details', 'Meeting', title || existing.title);
+
+    const updated = db.prepare(`
+      SELECT m.*, tm.name as created_by_name
+      FROM meetings m
+      LEFT JOIN team_members tm ON m.created_by_id = tm.id
+      WHERE m.id = ?
+    `).get(id);
+
+    res.json(updated);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/meetings/:id', requireAuth, (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const meeting = db.prepare('SELECT title FROM meetings WHERE id = ?').get(id) as any;
+    if (!meeting) {
+      return res.status(404).json({ error: 'Meeting not found' });
+    }
+
+    db.prepare('UPDATE meetings SET deleted_at = ? WHERE id = ?').run(new Date().toISOString(), id);
+    logActivity(req.user?.name || 'User', req.user?.id || null, 'moved meeting to trash', 'Meeting', meeting.title || id);
+
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// -------------------------------------------------------------
 // 14. Trash & Soft-Delete Recovery System
 // -------------------------------------------------------------
 app.get('/api/trash', requireAuth, (_req: AuthRequest, res: Response) => {
@@ -2086,6 +2270,7 @@ app.get('/api/trash', requireAuth, (_req: AuthRequest, res: Response) => {
     const issues = db.prepare('SELECT id, title, deleted_at, "issue" as entity_type FROM issues WHERE deleted_at IS NOT NULL').all();
     const simulations = db.prepare('SELECT id, name as title, deleted_at, "simulation_model" as entity_type FROM simulation_models WHERE deleted_at IS NOT NULL').all();
     const sections = db.prepare('SELECT id, title, deleted_at, "report_section" as entity_type FROM report_sections WHERE deleted_at IS NOT NULL').all();
+    const meetings = db.prepare('SELECT id, title, deleted_at, "meeting" as entity_type FROM meetings WHERE deleted_at IS NOT NULL').all();
 
     const allTrash = [
       ...papers,
@@ -2098,6 +2283,7 @@ app.get('/api/trash', requireAuth, (_req: AuthRequest, res: Response) => {
       ...issues,
       ...simulations,
       ...sections,
+      ...meetings,
     ].sort((a: any, b: any) => new Date(b.deleted_at).getTime() - new Date(a.deleted_at).getTime());
 
     res.json(allTrash);
@@ -2125,6 +2311,7 @@ app.post('/api/trash/restore', requireAuth, (req: AuthRequest, res: Response) =>
       issue: 'issues',
       simulation_model: 'simulation_models',
       report_section: 'report_sections',
+      meeting: 'meetings',
     };
 
     const tableName = tableMap[entity_type];
@@ -2160,6 +2347,7 @@ app.delete('/api/trash/permanent', requireAdmin, (req: AuthRequest, res: Respons
       issue: 'issues',
       simulation_model: 'simulation_models',
       report_section: 'report_sections',
+      meeting: 'meetings',
     };
 
     const tableName = tableMap[entity_type];
@@ -2173,6 +2361,7 @@ app.delete('/api/trash/permanent', requireAdmin, (req: AuthRequest, res: Respons
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+
   }
 });
 

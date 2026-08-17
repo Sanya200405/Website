@@ -410,6 +410,24 @@ export interface SimulationModel {
   deleted_at?: string;
 }
 
+export interface MeetingItem {
+  id: string;
+  title: string;
+  date: string;
+  start_time: string;
+  end_time?: string;
+  meeting_link?: string;
+  location?: string;
+  description?: string;
+  notes?: string;
+  reminder?: 'none' | '10_mins' | '30_mins' | '1_hour' | '1_day';
+  created_by_id?: string;
+  created_by_name?: string;
+  created_at: string;
+  updated_at: string;
+  deleted_at?: string;
+}
+
 const BASE_URL = '/api';
 const TOKEN_KEY = 'foc_drive_token';
 
@@ -724,6 +742,24 @@ export const api = {
     }),
   deleteReportLink: (id: string) =>
     fetchJSON<{ success: boolean }>(`${BASE_URL}/report/links/${id}`, {
+      method: 'DELETE',
+    }),
+
+  // Team Meetings
+  getMeetings: () => fetchJSON<MeetingItem[]>(`${BASE_URL}/meetings`),
+  getMeeting: (id: string) => fetchJSON<MeetingItem>(`${BASE_URL}/meetings/${id}`),
+  addMeeting: (data: Partial<MeetingItem> & { user_name?: string }) =>
+    fetchJSON<MeetingItem>(`${BASE_URL}/meetings`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateMeeting: (id: string, data: Partial<MeetingItem> & { user_name?: string }) =>
+    fetchJSON<MeetingItem>(`${BASE_URL}/meetings/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  deleteMeeting: (id: string) =>
+    fetchJSON<{ success: boolean }>(`${BASE_URL}/meetings/${id}`, {
       method: 'DELETE',
     }),
 

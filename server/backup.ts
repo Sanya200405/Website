@@ -241,6 +241,7 @@ export function getFullProjectJsonDump(): Record<string, any> {
     simulation_experiment_links: db.prepare('SELECT * FROM simulation_experiment_links').all(),
     report_sections: db.prepare('SELECT * FROM report_sections').all(),
     report_links: db.prepare('SELECT * FROM report_links').all(),
+    meetings: db.prepare('SELECT * FROM meetings').all(),
     activities: db.prepare('SELECT * FROM activities ORDER BY timestamp DESC LIMIT 250').all(),
     backup_records: db.prepare('SELECT * FROM backup_records ORDER BY created_at DESC LIMIT 50').all(),
   };
