@@ -72,9 +72,12 @@ export const ResearchPaperModal: React.FC<ResearchPaperModalProps> = ({
 
     setIsSubmitting(true);
     try {
-      if (pdfFile && !paper) {
+      if (pdfFile) {
         const formData = new FormData();
         formData.append('pdf_file', pdfFile);
+        if (paper?.id) {
+          formData.append('id', paper.id);
+        }
         formData.append('title', title.trim());
         formData.append('authors', authors.trim());
         formData.append('year', year);
@@ -241,29 +244,33 @@ export const ResearchPaperModal: React.FC<ResearchPaperModalProps> = ({
             </div>
           </div>
 
-          {!paper && (
-            <div className={`space-y-2 p-4 rounded-xl border border-dashed text-center ${
-              isDark
-                ? 'border-cyan-500/40 bg-cyan-950/20 text-cyan-300'
-                : 'border-cyan-400 bg-cyan-50 text-cyan-900'
-            }`}>
-              <Upload className="w-6 h-6 text-cyan-600 dark:text-cyan-400 mx-auto" />
-              <div>
-                <label className={`font-bold block text-xs ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>
-                  {pdfFile ? pdfFile.name : 'Optional: Attach Paper PDF'}
-                </label>
-                <p className={`text-[11px] mt-0.5 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
-                  PDF document will be saved directly to server storage
-                </p>
-              </div>
-              <input
-                type="file"
-                accept=".pdf,application/pdf"
-                onChange={(e) => setPdfFile(e.target.files?.[0] || null)}
-                className="text-xs text-slate-600 dark:text-slate-300 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-cyan-600 file:text-white hover:file:bg-cyan-500"
-              />
+          <div className={`space-y-2 p-4 rounded-xl border border-dashed text-center ${
+            isDark
+              ? 'border-cyan-500/40 bg-cyan-950/20 text-cyan-300'
+              : 'border-cyan-400 bg-cyan-50 text-cyan-900'
+          }`}>
+            <Upload className="w-6 h-6 text-cyan-600 dark:text-cyan-400 mx-auto" />
+            <div>
+              <label className={`font-bold block text-xs ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>
+                {pdfFile
+                  ? `Selected PDF: ${pdfFile.name}`
+                  : paper?.pdf_name
+                  ? `Current PDF: ${paper.pdf_name} (Click below to replace)`
+                  : 'Optional: Attach Paper PDF'}
+              </label>
+              <p className={`text-[11px] mt-0.5 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+                {paper?.pdf_name && !pdfFile
+                  ? 'Attached PDF is active. Choose a new PDF to overwrite it.'
+                  : 'PDF document will be saved directly to server storage and linked to this paper'}
+              </p>
             </div>
-          )}
+            <input
+              type="file"
+              accept=".pdf,application/pdf"
+              onChange={(e) => setPdfFile(e.target.files?.[0] || null)}
+              className="text-xs text-slate-600 dark:text-slate-300 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-cyan-600 file:text-white hover:file:bg-cyan-500"
+            />
+          </div>
 
           <div className="space-y-1.5">
             <label className={labelClass}>Summary & Key Takeaways</label>

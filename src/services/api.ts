@@ -672,7 +672,7 @@ export const api = {
       const errorData = await res.json().catch(() => ({ error: 'PDF upload failed' }));
       throw new Error(errorData.error || `HTTP ${res.status}`);
     }
-    return res.json() as Promise<{ pdf_url: string; pdf_name: string }>;
+    return res.json() as Promise<ResearchPaper | { pdf_url: string; pdf_name: string }>;
   },
   updateResearchPaper: (id: string, data: Partial<ResearchPaper> & { user_name?: string }) =>
     fetchJSON<ResearchPaper>(`${BASE_URL}/research-papers/${id}`, {

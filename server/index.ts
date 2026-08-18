@@ -382,6 +382,13 @@ app.get('/api/stats', (_req: Request, res: Response) => {
       ? Math.round((completedTasks / totalTasks) * 100)
       : 0;
 
+    const totalTeamMembers = (db.prepare('SELECT COUNT(*) as count FROM team_members WHERE is_active = 1').get() as any).count;
+    const totalDocuments = (db.prepare('SELECT COUNT(*) as count FROM documents WHERE deleted_at IS NULL').get() as any).count;
+    const totalResearchPapers = (db.prepare('SELECT COUNT(*) as count FROM research_papers WHERE deleted_at IS NULL').get() as any).count;
+    const totalLearningResources = (db.prepare('SELECT COUNT(*) as count FROM learning_resources WHERE deleted_at IS NULL').get() as any).count;
+    const totalEngineeringNotes = (db.prepare('SELECT COUNT(*) as count FROM engineering_notes WHERE deleted_at IS NULL').get() as any).count;
+    const totalReportSections = (db.prepare('SELECT COUNT(*) as count FROM report_sections WHERE deleted_at IS NULL').get() as any).count;
+
     res.json({
       overallProgress,
       totalTasks,
@@ -394,6 +401,12 @@ app.get('/api/stats', (_req: Request, res: Response) => {
       openIssues,
       completedTests,
       totalTests,
+      totalTeamMembers,
+      totalDocuments,
+      totalResearchPapers,
+      totalLearningResources,
+      totalEngineeringNotes,
+      totalReportSections,
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -1501,16 +1514,131 @@ app.post('/api/research-papers', requireAuth, (req: AuthRequest, res: Response) 
   }
 });
 
-// Upload Research Paper PDF
+// Upload Research Paper PDF & Save/Update Paper
 app.post('/api/research-papers/upload-pdf', requireAuth, upload.single('pdf_file'), (req: AuthRequest, res: Response) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No PDF file uploaded' });
     }
+
+    const {
+      id: paperId,
+      title,
+      authors,
+      year,
+      journal_conference,
+      doi,
+      url,
+      topic,
+      tags,
+      summary,
+      notes,
+      reading_status,
+      user_name,
+    } = req.body;
+
     const pdf_url = `/uploads/${req.file.filename}`;
+    const pdf_name = req.file.originalname;
+
+    // 1. If updating an existing paper
+    if (paperId) {
+      const updated_at = new Date().toISOString();
+      db.prepare(`
+        UPDATE research_papers
+        SET title = COALESCE(?, title),
+            authors = COALESCE(?, authors),
+            year = COALESCE(?, year),
+            journal_conference = COALESCE(?, journal_conference),
+            doi = COALESCE(?, doi),
+            url = COALESCE(?, url),
+            pdf_url = ?,
+            pdf_name = ?,
+            topic = COALESCE(?, topic),
+            tags = COALESCE(?, tags),
+            summary = COALESCE(?, summary),
+            notes = COALESCE(?, notes),
+            reading_status = COALESCE(?, reading_status),
+            updated_at = ?
+        WHERE id = ?
+      `).run(
+        title || null,
+        authors || null,
+        year ? parseInt(year) : null,
+        journal_conference || null,
+        doi || null,
+        url || null,
+        pdf_url,
+        pdf_name,
+        topic || null,
+        tags || null,
+        summary || null,
+        notes || null,
+        reading_status || null,
+        updated_at,
+        paperId
+      );
+
+      logActivity(user_name || req.user?.name || 'User', req.user?.id || null, 'updated research paper with PDF', 'Research', title || paperId);
+
+      const updated = db.prepare(`
+        SELECT p.*, tm.name as added_by_name
+        FROM research_papers p
+        LEFT JOIN team_members tm ON p.added_by_id = tm.id
+        WHERE p.id = ?
+      `).get(paperId);
+
+      return res.json(updated);
+    }
+
+    // 2. If creating a new paper (title is present)
+    if (title && title.trim()) {
+      const id = 'ppr_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+      const created_at = new Date().toISOString();
+
+      const userExists = req.user?.id ? db.prepare('SELECT id FROM team_members WHERE id = ?').get(req.user.id) : null;
+      const added_by_id = userExists ? req.user?.id : null;
+
+      db.prepare(`
+        INSERT INTO research_papers (
+          id, title, authors, year, journal_conference, doi, url, pdf_url, pdf_name,
+          topic, tags, summary, notes, reading_status, added_by_id, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        id,
+        title.trim(),
+        authors || '',
+        year ? parseInt(year) : null,
+        journal_conference || '',
+        doi || '',
+        url || '',
+        pdf_url,
+        pdf_name,
+        topic || '',
+        tags || '',
+        summary || '',
+        notes || '',
+        reading_status || 'Unread',
+        added_by_id,
+        created_at,
+        created_at
+      );
+
+      logActivity(user_name || req.user?.name || 'User', req.user?.id || null, 'added research paper', 'Research', title.trim());
+
+      const newPaper = db.prepare(`
+        SELECT p.*, tm.name as added_by_name
+        FROM research_papers p
+        LEFT JOIN team_members tm ON p.added_by_id = tm.id
+        WHERE p.id = ?
+      `).get(id);
+
+      return res.status(201).json(newPaper);
+    }
+
+    // 3. Standalone file upload fallback
     res.json({
       pdf_url,
-      pdf_name: req.file.originalname,
+      pdf_name,
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
