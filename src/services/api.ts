@@ -89,6 +89,37 @@ export interface MilestoneItem {
   created_at: string;
 }
 
+export interface TaskAssignment {
+  id: string;
+  task_id: string;
+  member_id: string;
+  member_name?: string;
+  member_email?: string;
+  member_role?: string;
+  member_avatar?: string;
+  status: 'Not Started' | 'In Progress' | 'Blocked' | 'Completed';
+  completed_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ReadingAssignment {
+  id: string;
+  item_type: 'research_paper' | 'learning_resource' | 'document';
+  item_id: string;
+  member_id: string;
+  member_name?: string;
+  member_email?: string;
+  member_role?: string;
+  member_avatar?: string;
+  status: 'Unread' | 'Reading' | 'Completed';
+  instructions?: string;
+  due_date?: string;
+  completed_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface TaskItem {
   id: string;
   milestone_id?: string;
@@ -98,6 +129,12 @@ export interface TaskItem {
   assigned_to_id?: string;
   assigned_to_name?: string;
   assigned_to_avatar?: string;
+  assigned_member_ids?: string[];
+  is_all_members?: boolean;
+  assignments?: TaskAssignment[];
+  total_assignments_count?: number;
+  completed_assignments_count?: number;
+  progress_summary?: string;
   status: 'Not Started' | 'In Progress' | 'Blocked' | 'Completed';
   priority: 'Low' | 'Medium' | 'High' | 'Critical';
   category: string;
@@ -163,6 +200,14 @@ export interface DocumentItem {
   uploaded_by_name?: string;
   type: string;
   description?: string;
+  is_all_members?: boolean;
+  assigned_member_ids?: string[];
+  due_date?: string;
+  instructions?: string;
+  assignments?: ReadingAssignment[];
+  total_assignments_count?: number;
+  completed_assignments_count?: number;
+  progress_summary?: string;
   created_at: string;
 }
 
@@ -181,6 +226,14 @@ export interface ResearchPaper {
   summary?: string;
   notes?: string;
   reading_status: 'Unread' | 'Reading' | 'Completed';
+  is_all_members?: boolean;
+  assigned_member_ids?: string[];
+  due_date?: string;
+  instructions?: string;
+  assignments?: ReadingAssignment[];
+  total_assignments_count?: number;
+  completed_assignments_count?: number;
+  progress_summary?: string;
   added_by_id?: string;
   added_by_name?: string;
   created_at: string;
@@ -196,6 +249,14 @@ export interface LearningResource {
   description?: string;
   tags?: string;
   notes?: string;
+  is_all_members?: boolean;
+  assigned_member_ids?: string[];
+  due_date?: string;
+  instructions?: string;
+  assignments?: ReadingAssignment[];
+  total_assignments_count?: number;
+  completed_assignments_count?: number;
+  progress_summary?: string;
   added_by_id?: string;
   added_by_name?: string;
   created_at: string;
@@ -543,6 +604,11 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
+  updateMyTaskStatus: (taskId: string, status: string, memberId?: string, userName?: string) =>
+    fetchJSON<TaskItem>(`${BASE_URL}/tasks/${taskId}/assignment-status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status, member_id: memberId, user_name: userName }),
+    }),
   deleteTask: (id: string) =>
     fetchJSON<{ success: boolean }>(`${BASE_URL}/tasks/${id}`, {
       method: 'DELETE',
@@ -699,6 +765,13 @@ export const api = {
   deleteLearningResource: (id: string) =>
     fetchJSON<{ success: boolean }>(`${BASE_URL}/learning-resources/${id}`, {
       method: 'DELETE',
+    }),
+
+  // Reading Material Status
+  updateMyReadingStatus: (itemType: 'research_paper' | 'learning_resource' | 'document', itemId: string, status: string, memberId?: string, userName?: string) =>
+    fetchJSON<{ success: boolean; status: string; completed_at?: string }>(`${BASE_URL}/reading-assignments/${itemType}/${itemId}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status, member_id: memberId, user_name: userName }),
     }),
 
   // Engineering Notes

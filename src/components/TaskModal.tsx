@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, CheckSquare } from 'lucide-react';
+import { X, CheckSquare, Users, UserCheck } from 'lucide-react';
 import type { TaskItem, TeamMember, MilestoneItem } from '../services/api';
 
 interface TaskModalProps {
@@ -24,7 +24,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const isDark = theme === 'dark';
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [assignedToId, setAssignedToId] = useState('');
+  const [isAllMembers, setIsAllMembers] = useState(false);
+  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
   const [milestoneId, setMilestoneId] = useState('');
   const [status, setStatus] = useState<TaskItem['status']>('Not Started');
   const [priority, setPriority] = useState<TaskItem['priority']>('Medium');
@@ -37,7 +38,16 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     if (task) {
       setTitle(task.title || '');
       setDescription(task.description || '');
-      setAssignedToId(task.assigned_to_id || '');
+      setIsAllMembers(Boolean(task.is_all_members));
+      if (task.is_all_members) {
+        setSelectedMemberIds(team.map((m) => m.id));
+      } else if (task.assigned_member_ids && task.assigned_member_ids.length > 0) {
+        setSelectedMemberIds(task.assigned_member_ids);
+      } else if (task.assigned_to_id) {
+        setSelectedMemberIds([task.assigned_to_id]);
+      } else {
+        setSelectedMemberIds([]);
+      }
       setMilestoneId(task.milestone_id || '');
       setStatus(task.status || 'Not Started');
       setPriority(task.priority || 'Medium');
@@ -47,7 +57,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     } else {
       setTitle('');
       setDescription('');
-      setAssignedToId(team[0]?.id || '');
+      setIsAllMembers(false);
+      setSelectedMemberIds(team[0] ? [team[0].id] : []);
       setMilestoneId(milestones[0]?.id || '');
       setStatus('Not Started');
       setPriority('Medium');
@@ -59,6 +70,26 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
   if (!isOpen) return null;
 
+  const toggleMemberSelection = (memberId: string) => {
+    if (isAllMembers) {
+      setIsAllMembers(false);
+      setSelectedMemberIds([memberId]);
+      return;
+    }
+    setSelectedMemberIds((prev) =>
+      prev.includes(memberId) ? prev.filter((id) => id !== memberId) : [...prev, memberId]
+    );
+  };
+
+  const handleAllMembersToggle = (checked: boolean) => {
+    setIsAllMembers(checked);
+    if (checked) {
+      setSelectedMemberIds(team.map((m) => m.id));
+    } else {
+      setSelectedMemberIds(team[0] ? [team[0].id] : []);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
@@ -68,7 +99,9 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       await onSave({
         title: title.trim(),
         description: description.trim(),
-        assigned_to_id: assignedToId || undefined,
+        is_all_members: isAllMembers,
+        assigned_member_ids: isAllMembers ? team.map((m) => m.id) : selectedMemberIds,
+        assigned_to_id: !isAllMembers && selectedMemberIds.length === 1 ? selectedMemberIds[0] : undefined,
         milestone_id: milestoneId || undefined,
         status,
         priority,
@@ -93,8 +126,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const labelClass = `font-semibold text-xs tracking-wide ${isDark ? 'text-slate-300' : 'text-slate-700'}`;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className={`w-full max-w-lg rounded-2xl border shadow-2xl p-6 md:p-7 space-y-5 ${
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm animate-in fade-in duration-200 overflow-y-auto">
+      <div className={`w-full max-w-lg rounded-2xl border shadow-2xl p-6 md:p-7 space-y-5 my-8 ${
         isDark ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-900'
       }`}>
         <div className={`flex items-center justify-between pb-3.5 border-b ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
@@ -138,38 +171,83 @@ export const TaskModal: React.FC<TaskModalProps> = ({
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-            <div className="space-y-1.5">
-              <label className={labelClass}>Assigned Member</label>
-              <select
-                value={assignedToId}
-                onChange={(e) => setAssignedToId(e.target.value)}
-                className={inputClass}
-              >
-                <option value="">Unassigned</option>
-                {team.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name} ({m.role})
-                  </option>
-                ))}
-              </select>
+          {/* Member Assignment Section */}
+          <div className={`p-3.5 rounded-xl border space-y-3 ${
+            isDark ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
+          }`}>
+            <div className="flex items-center justify-between">
+              <label className={`flex items-center gap-2 text-xs font-semibold cursor-pointer select-none ${
+                isDark ? 'text-slate-200' : 'text-slate-800'
+              }`}>
+                <input
+                  type="checkbox"
+                  id="task-assign-all"
+                  checked={isAllMembers}
+                  onChange={(e) => handleAllMembersToggle(e.target.checked)}
+                  className="w-4 h-4 rounded border-slate-600 text-cyan-600 focus:ring-cyan-500 cursor-pointer"
+                />
+                <Users className="w-4 h-4 text-cyan-500" />
+                <span>Assign to all team members</span>
+              </label>
+
+              <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${
+                isAllMembers
+                  ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20'
+                  : 'text-slate-400'
+              }`}>
+                {isAllMembers ? `All (${team.length}) assigned` : `${selectedMemberIds.length} selected`}
+              </span>
             </div>
 
-            <div className="space-y-1.5">
-              <label className={labelClass}>Milestone</label>
-              <select
-                value={milestoneId}
-                onChange={(e) => setMilestoneId(e.target.value)}
-                className={inputClass}
-              >
-                <option value="">No Milestone Linked</option>
-                {milestones.map((ms) => (
-                  <option key={ms.id} value={ms.id}>
-                    {ms.title}
-                  </option>
-                ))}
-              </select>
+            {/* Individual member selection pills */}
+            <div className="space-y-1.5 pt-1">
+              <div className="text-[11px] text-slate-400">
+                {isAllMembers
+                  ? 'Every current member will track their own completion status independently.'
+                  : 'Select one or more members to assign:'}
+              </div>
+              <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
+                {team.map((m) => {
+                  const isSelected = isAllMembers || selectedMemberIds.includes(m.id);
+                  return (
+                    <button
+                      type="button"
+                      key={m.id}
+                      onClick={() => toggleMemberSelection(m.id)}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition-all ${
+                        isSelected
+                          ? isDark
+                            ? 'bg-cyan-950/70 border-cyan-500/50 text-cyan-300 shadow-sm shadow-cyan-950'
+                            : 'bg-cyan-50 border-cyan-400 text-cyan-800 shadow-sm'
+                          : isDark
+                          ? 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700'
+                          : 'bg-white border-slate-300 text-slate-600 hover:border-slate-400'
+                      }`}
+                    >
+                      {isSelected && <UserCheck className="w-3 h-3 text-cyan-500" />}
+                      <span>{m.name}</span>
+                      <span className="text-[10px] opacity-60">({m.role})</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className={labelClass}>Milestone</label>
+            <select
+              value={milestoneId}
+              onChange={(e) => setMilestoneId(e.target.value)}
+              className={inputClass}
+            >
+              <option value="">No Milestone Linked</option>
+              {milestones.map((ms) => (
+                <option key={ms.id} value={ms.id}>
+                  {ms.title}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="grid grid-cols-3 gap-3">

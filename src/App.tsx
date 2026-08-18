@@ -54,6 +54,7 @@ export function App() {
     logout,
     addTask,
     updateTask,
+    updateMyTaskStatus,
     deleteTask,
     addMilestone,
     updateMilestone,
@@ -82,6 +83,7 @@ export function App() {
     addLearningResource,
     updateLearningResource,
     deleteLearningResource,
+    updateMyReadingStatus,
     addEngineeringNote,
     updateEngineeringNote,
     deleteEngineeringNote,
@@ -286,6 +288,7 @@ export function App() {
             onOpenNewTask={handleOpenNewTask}
             onEditTask={handleEditTask}
             onUpdateStatus={(id, status) => updateTask(id, { status })}
+            onUpdateMemberStatus={updateMyTaskStatus}
             onDeleteTask={deleteTask}
           />
         );
@@ -350,6 +353,7 @@ export function App() {
             onDeleteNote={deleteEngineeringNote}
             onOpenUploadDoc={() => setIsDocModalOpen(true)}
             onDeleteDoc={deleteDocument}
+            onUpdateReadingStatus={updateMyReadingStatus}
           />
         );
       case 'report':
@@ -574,6 +578,7 @@ export function App() {
         }}
         onUploadPdf={uploadResearchPaperPdf}
         paper={selectedPaper}
+        team={state.team}
         theme={state.theme}
       />
 
@@ -587,6 +592,7 @@ export function App() {
           return addLearningResource(data);
         }}
         resource={selectedResource}
+        team={state.team}
         theme={state.theme}
       />
 

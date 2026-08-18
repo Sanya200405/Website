@@ -337,6 +337,31 @@ export function initDatabase() {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS task_assignments (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      member_id TEXT NOT NULL REFERENCES team_members(id) ON DELETE CASCADE,
+      status TEXT NOT NULL DEFAULT 'Not Started',
+      completed_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(task_id, member_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS reading_assignments (
+      id TEXT PRIMARY KEY,
+      item_type TEXT NOT NULL, -- 'research_paper' | 'learning_resource' | 'document'
+      item_id TEXT NOT NULL,
+      member_id TEXT NOT NULL REFERENCES team_members(id) ON DELETE CASCADE,
+      status TEXT NOT NULL DEFAULT 'Unread', -- 'Unread' | 'Reading' | 'Completed'
+      instructions TEXT,
+      due_date TEXT,
+      completed_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(item_type, item_id, member_id)
+    );
   `);
 
   // Column migrations for existing tables
@@ -359,6 +384,38 @@ export function initDatabase() {
   try { db.exec("ALTER TABLE simulation_models ADD COLUMN deleted_at TEXT"); } catch (_) {}
   try { db.exec("ALTER TABLE meetings ADD COLUMN reminder TEXT DEFAULT 'none'"); } catch (_) {}
   try { db.exec("ALTER TABLE meetings ADD COLUMN deleted_at TEXT"); } catch (_) {}
+
+  // Assignment feature column migrations
+  try { db.exec("ALTER TABLE tasks ADD COLUMN is_all_members INTEGER DEFAULT 0"); } catch (_) {}
+  try { db.exec("ALTER TABLE tasks ADD COLUMN assigned_member_ids TEXT"); } catch (_) {}
+  try { db.exec("ALTER TABLE research_papers ADD COLUMN is_all_members INTEGER DEFAULT 0"); } catch (_) {}
+  try { db.exec("ALTER TABLE research_papers ADD COLUMN assigned_member_ids TEXT"); } catch (_) {}
+  try { db.exec("ALTER TABLE research_papers ADD COLUMN due_date TEXT"); } catch (_) {}
+  try { db.exec("ALTER TABLE research_papers ADD COLUMN instructions TEXT"); } catch (_) {}
+  try { db.exec("ALTER TABLE learning_resources ADD COLUMN is_all_members INTEGER DEFAULT 0"); } catch (_) {}
+  try { db.exec("ALTER TABLE learning_resources ADD COLUMN assigned_member_ids TEXT"); } catch (_) {}
+  try { db.exec("ALTER TABLE learning_resources ADD COLUMN due_date TEXT"); } catch (_) {}
+  try { db.exec("ALTER TABLE learning_resources ADD COLUMN instructions TEXT"); } catch (_) {}
+  try { db.exec("ALTER TABLE documents ADD COLUMN is_all_members INTEGER DEFAULT 0"); } catch (_) {}
+  try { db.exec("ALTER TABLE documents ADD COLUMN assigned_member_ids TEXT"); } catch (_) {}
+  try { db.exec("ALTER TABLE documents ADD COLUMN due_date TEXT"); } catch (_) {}
+  try { db.exec("ALTER TABLE documents ADD COLUMN instructions TEXT"); } catch (_) {}
+
+  // Backfill existing task assignments into task_assignments table
+  try {
+    const existingTasks = db.prepare('SELECT id, assigned_to_id, status, completed_at, created_at FROM tasks WHERE assigned_to_id IS NOT NULL AND deleted_at IS NULL').all() as any[];
+    const insertAssignment = db.prepare(`
+      INSERT OR IGNORE INTO task_assignments (id, task_id, member_id, status, completed_at, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const t of existingTasks) {
+      if (t.assigned_to_id) {
+        const assignId = 'ta_' + t.id + '_' + t.assigned_to_id;
+        const now = new Date().toISOString();
+        insertAssignment.run(assignId, t.id, t.assigned_to_id, t.status || 'Not Started', t.completed_at || null, t.created_at || now, now);
+      }
+    }
+  } catch (_) {}
 
   // Ensure default project configuration exists
   const project = db.prepare('SELECT * FROM projects WHERE id = ?').get('proj_foc_main');

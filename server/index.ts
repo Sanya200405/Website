@@ -601,6 +601,167 @@ app.delete('/api/milestones/:id', requireAuth, (req: AuthRequest, res: Response)
 });
 
 // -------------------------------------------------------------
+// Helper Functions for Member Assignments & Tracking
+// -------------------------------------------------------------
+function getActiveTeamMembers() {
+  return db.prepare('SELECT id, name, email, role, avatar FROM team_members WHERE is_active = 1').all() as any[];
+}
+
+function attachTaskAssignments(tasks: any[]) {
+  if (!tasks || !tasks.length) return tasks || [];
+  const taskIds = tasks.map((t) => t.id);
+  const placeholders = taskIds.map(() => '?').join(',');
+  const allAssignments = db.prepare(`
+    SELECT ta.*, tm.name as member_name, tm.email as member_email, tm.role as member_role, tm.avatar as member_avatar
+    FROM task_assignments ta
+    JOIN team_members tm ON ta.member_id = tm.id
+    WHERE ta.task_id IN (${placeholders})
+    ORDER BY tm.name ASC
+  `).all(...taskIds) as any[];
+
+  const assignmentMap: Record<string, any[]> = {};
+  for (const a of allAssignments) {
+    if (!assignmentMap[a.task_id]) assignmentMap[a.task_id] = [];
+    assignmentMap[a.task_id].push(a);
+  }
+
+  return tasks.map((t) => {
+    const assignments = assignmentMap[t.id] || [];
+    const totalAssignments = assignments.length;
+    const completedAssignments = assignments.filter((a) => a.status === 'Completed').length;
+    const assignedMemberIds = assignments.map((a) => a.member_id);
+
+    return {
+      ...t,
+      is_all_members: Boolean(t.is_all_members),
+      assignments,
+      assigned_member_ids: assignedMemberIds,
+      total_assignments_count: totalAssignments,
+      completed_assignments_count: completedAssignments,
+      progress_summary: totalAssignments > 0 ? `${completedAssignments}/${totalAssignments}` : undefined,
+    };
+  });
+}
+
+function attachReadingAssignments(items: any[], itemType: string) {
+  if (!items || !items.length) return items || [];
+  const itemIds = items.map((i) => i.id);
+  const placeholders = itemIds.map(() => '?').join(',');
+  const allAssignments = db.prepare(`
+    SELECT ra.*, tm.name as member_name, tm.email as member_email, tm.role as member_role, tm.avatar as member_avatar
+    FROM reading_assignments ra
+    JOIN team_members tm ON ra.member_id = tm.id
+    WHERE ra.item_type = ? AND ra.item_id IN (${placeholders})
+    ORDER BY tm.name ASC
+  `).all(itemType, ...itemIds) as any[];
+
+  const assignmentMap: Record<string, any[]> = {};
+  for (const a of allAssignments) {
+    if (!assignmentMap[a.item_id]) assignmentMap[a.item_id] = [];
+    assignmentMap[a.item_id].push(a);
+  }
+
+  return items.map((item) => {
+    const assignments = assignmentMap[item.id] || [];
+    const totalAssignments = assignments.length;
+    const completedAssignments = assignments.filter((a) => a.status === 'Completed').length;
+    const assignedMemberIds = assignments.map((a) => a.member_id);
+
+    return {
+      ...item,
+      is_all_members: Boolean(item.is_all_members),
+      assignments,
+      assigned_member_ids: assignedMemberIds,
+      total_assignments_count: totalAssignments,
+      completed_assignments_count: completedAssignments,
+      progress_summary: totalAssignments > 0 ? `${completedAssignments}/${totalAssignments}` : undefined,
+    };
+  });
+}
+
+function syncTaskAssignments(taskId: string, isAllMembers?: boolean | number, assignedMemberIds?: string[], singleAssignedToId?: string, taskStatus: string = 'Not Started') {
+  const now = new Date().toISOString();
+  const completed_at = taskStatus === 'Completed' ? now : null;
+
+  if (Boolean(isAllMembers)) {
+    const activeMembers = getActiveTeamMembers();
+    const insertStmt = db.prepare(`
+      INSERT INTO task_assignments (id, task_id, member_id, status, completed_at, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(task_id, member_id) DO NOTHING
+    `);
+    for (const m of activeMembers) {
+      const assignId = 'ta_' + taskId + '_' + m.id;
+      insertStmt.run(assignId, taskId, m.id, 'Not Started', null, now, now);
+    }
+  } else if (Array.isArray(assignedMemberIds) && assignedMemberIds.length > 0) {
+    const placeholders = assignedMemberIds.map(() => '?').join(',');
+    db.prepare(`DELETE FROM task_assignments WHERE task_id = ? AND member_id NOT IN (${placeholders})`).run(taskId, ...assignedMemberIds);
+
+    const insertStmt = db.prepare(`
+      INSERT INTO task_assignments (id, task_id, member_id, status, completed_at, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(task_id, member_id) DO NOTHING
+    `);
+    for (const memberId of assignedMemberIds) {
+      const assignId = 'ta_' + taskId + '_' + memberId;
+      insertStmt.run(assignId, taskId, memberId, 'Not Started', null, now, now);
+    }
+  } else if (singleAssignedToId) {
+    db.prepare('DELETE FROM task_assignments WHERE task_id = ? AND member_id != ?').run(taskId, singleAssignedToId);
+    const assignId = 'ta_' + taskId + '_' + singleAssignedToId;
+    db.prepare(`
+      INSERT INTO task_assignments (id, task_id, member_id, status, completed_at, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(task_id, member_id) DO UPDATE SET
+        status = excluded.status,
+        completed_at = excluded.completed_at,
+        updated_at = excluded.updated_at
+    `).run(assignId, taskId, singleAssignedToId, taskStatus, completed_at, now, now);
+  } else {
+    db.prepare('DELETE FROM task_assignments WHERE task_id = ?').run(taskId);
+  }
+}
+
+function syncReadingAssignments(itemType: string, itemId: string, isAllMembers?: boolean | number, assignedMemberIds?: string[], instructions?: string, dueDate?: string) {
+  const now = new Date().toISOString();
+
+  if (Boolean(isAllMembers)) {
+    const activeMembers = getActiveTeamMembers();
+    const insertStmt = db.prepare(`
+      INSERT INTO reading_assignments (id, item_type, item_id, member_id, status, instructions, due_date, completed_at, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(item_type, item_id, member_id) DO UPDATE SET
+        instructions = COALESCE(excluded.instructions, instructions),
+        due_date = COALESCE(excluded.due_date, due_date),
+        updated_at = excluded.updated_at
+    `);
+    for (const m of activeMembers) {
+      const assignId = 'ra_' + itemType + '_' + itemId + '_' + m.id;
+      insertStmt.run(assignId, itemType, itemId, m.id, 'Unread', instructions || null, dueDate || null, null, now, now);
+    }
+  } else if (Array.isArray(assignedMemberIds) && assignedMemberIds.length > 0) {
+    const placeholders = assignedMemberIds.map(() => '?').join(',');
+    db.prepare(`DELETE FROM reading_assignments WHERE item_type = ? AND item_id = ? AND member_id NOT IN (${placeholders})`).run(itemType, itemId, ...assignedMemberIds);
+
+    const insertStmt = db.prepare(`
+      INSERT INTO reading_assignments (id, item_type, item_id, member_id, status, instructions, due_date, completed_at, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(item_type, item_id, member_id) DO UPDATE SET
+        instructions = COALESCE(excluded.instructions, instructions),
+        due_date = COALESCE(excluded.due_date, due_date),
+        updated_at = excluded.updated_at
+    `);
+    for (const memberId of assignedMemberIds) {
+      const assignId = 'ra_' + itemType + '_' + itemId + '_' + memberId;
+      insertStmt.run(assignId, itemType, itemId, memberId, 'Unread', instructions || null, dueDate || null, null, now, now);
+    }
+  } else {
+    db.prepare('DELETE FROM reading_assignments WHERE item_type = ? AND item_id = ?').run(itemType, itemId);
+  }
+}
+
+// -------------------------------------------------------------
 // 6. Tasks
 // -------------------------------------------------------------
 app.get('/api/tasks', (_req: Request, res: Response) => {
@@ -613,7 +774,8 @@ app.get('/api/tasks', (_req: Request, res: Response) => {
       WHERE t.deleted_at IS NULL
       ORDER BY t.created_at DESC
     `).all();
-    res.json(tasks);
+    const enriched = attachTaskAssignments(tasks);
+    res.json(enriched);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -621,21 +783,47 @@ app.get('/api/tasks', (_req: Request, res: Response) => {
 
 app.post('/api/tasks', requireAuth, (req: AuthRequest, res: Response) => {
   try {
-    const { title, description, milestone_id, assigned_to_id, status, priority, category, start_date, due_date, user_name } = req.body;
+    const {
+      title,
+      description,
+      milestone_id,
+      assigned_to_id,
+      assigned_member_ids,
+      is_all_members,
+      status,
+      priority,
+      category,
+      start_date,
+      due_date,
+      user_name,
+    } = req.body;
+
     if (!title) return res.status(400).json({ error: 'Title is required' });
 
     const id = 'tsk_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
     const created_at = new Date().toISOString();
+    const isAll = Boolean(is_all_members) ? 1 : 0;
+
+    // If single or multiple member IDs provided
+    let primaryAssignedId = assigned_to_id || null;
+    if (isAll) {
+      primaryAssignedId = null;
+    } else if (Array.isArray(assigned_member_ids) && assigned_member_ids.length > 0) {
+      primaryAssignedId = assigned_member_ids.length === 1 ? assigned_member_ids[0] : null;
+    }
 
     db.prepare(`
-      INSERT INTO tasks (id, milestone_id, title, description, assigned_to_id, status, priority, category, start_date, due_date, created_by_id, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO tasks (
+        id, milestone_id, title, description, assigned_to_id, is_all_members,
+        status, priority, category, start_date, due_date, created_by_id, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       milestone_id || null,
       title,
       description || '',
-      assigned_to_id || null,
+      primaryAssignedId,
+      isAll,
       status || 'Not Started',
       priority || 'Medium',
       category || 'General',
@@ -645,7 +833,11 @@ app.post('/api/tasks', requireAuth, (req: AuthRequest, res: Response) => {
       created_at
     );
 
-    logActivity(user_name || req.user?.name || 'User', req.user?.id || null, 'created task', 'Task', title);
+    // Sync task assignments table
+    syncTaskAssignments(id, isAll, assigned_member_ids, primaryAssignedId, status || 'Not Started');
+
+    const activityTarget = isAll ? 'All Team Members' : (primaryAssignedId ? 'assigned team member' : 'team');
+    logActivity(user_name || req.user?.name || 'User', req.user?.id || null, `created task (assigned to ${activityTarget})`, 'Task', title);
 
     const newTask = db.prepare(`
       SELECT t.*, m.title as milestone_title, tm.name as assigned_to_name
@@ -653,9 +845,10 @@ app.post('/api/tasks', requireAuth, (req: AuthRequest, res: Response) => {
       LEFT JOIN milestones m ON t.milestone_id = m.id
       LEFT JOIN team_members tm ON t.assigned_to_id = tm.id
       WHERE t.id = ?
-    `).get(id);
+    `).all(id);
 
-    res.status(201).json(newTask);
+    const enriched = attachTaskAssignments(newTask);
+    res.status(201).json(enriched[0]);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -664,16 +857,39 @@ app.post('/api/tasks', requireAuth, (req: AuthRequest, res: Response) => {
 app.put('/api/tasks/:id', requireAuth, (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { title, description, milestone_id, assigned_to_id, status, priority, category, start_date, due_date, user_name } = req.body;
+    const {
+      title,
+      description,
+      milestone_id,
+      assigned_to_id,
+      assigned_member_ids,
+      is_all_members,
+      status,
+      priority,
+      category,
+      start_date,
+      due_date,
+      user_name,
+    } = req.body;
 
     const completed_at = status === 'Completed' ? new Date().toISOString() : null;
+    const hasIsAll = typeof is_all_members !== 'undefined';
+    const isAll = hasIsAll ? (Boolean(is_all_members) ? 1 : 0) : undefined;
+
+    let primaryAssignedId = assigned_to_id;
+    if (isAll === 1) {
+      primaryAssignedId = null;
+    } else if (Array.isArray(assigned_member_ids)) {
+      primaryAssignedId = assigned_member_ids.length === 1 ? assigned_member_ids[0] : null;
+    }
 
     db.prepare(`
       UPDATE tasks
       SET title = COALESCE(?, title),
           description = COALESCE(?, description),
           milestone_id = COALESCE(?, milestone_id),
-          assigned_to_id = COALESCE(?, assigned_to_id),
+          assigned_to_id = CASE WHEN ? IS NOT NULL THEN ? ELSE assigned_to_id END,
+          is_all_members = COALESCE(?, is_all_members),
           status = COALESCE(?, status),
           priority = COALESCE(?, priority),
           category = COALESCE(?, category),
@@ -681,7 +897,27 @@ app.put('/api/tasks/:id', requireAuth, (req: AuthRequest, res: Response) => {
           due_date = COALESCE(?, due_date),
           completed_at = CASE WHEN ? = 'Completed' THEN ? ELSE completed_at END
       WHERE id = ?
-    `).run(title, description, milestone_id, assigned_to_id, status, priority, category, start_date, due_date, status, completed_at, id);
+    `).run(
+      title,
+      description,
+      milestone_id,
+      hasIsAll || Array.isArray(assigned_member_ids) ? 1 : null,
+      primaryAssignedId,
+      isAll,
+      status,
+      priority,
+      category,
+      start_date,
+      due_date,
+      status,
+      completed_at,
+      id
+    );
+
+    if (hasIsAll || Array.isArray(assigned_member_ids) || typeof assigned_to_id !== 'undefined') {
+      const currentTask = db.prepare('SELECT is_all_members, status FROM tasks WHERE id = ?').get(id) as any;
+      syncTaskAssignments(id, isAll ?? currentTask?.is_all_members, assigned_member_ids, primaryAssignedId, status || currentTask?.status);
+    }
 
     logActivity(user_name || req.user?.name || 'User', req.user?.id || null, `updated task status to ${status || 'edited'}`, 'Task', title || id);
 
@@ -691,9 +927,70 @@ app.put('/api/tasks/:id', requireAuth, (req: AuthRequest, res: Response) => {
       LEFT JOIN milestones m ON t.milestone_id = m.id
       LEFT JOIN team_members tm ON t.assigned_to_id = tm.id
       WHERE t.id = ?
-    `).get(id);
+    `).all(id);
 
-    res.json(updated);
+    const enriched = attachTaskAssignments(updated);
+    res.json(enriched[0]);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Individual Member Task Status Update (Without altering other members' status)
+app.put('/api/tasks/:id/assignment-status', requireAuth, (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { status, member_id, user_name } = req.body;
+    const targetMemberId = member_id || req.user?.id;
+    if (!targetMemberId) return res.status(400).json({ error: 'Member ID is required' });
+    if (!status) return res.status(400).json({ error: 'Status is required' });
+
+    const now = new Date().toISOString();
+    const completed_at = status === 'Completed' ? now : null;
+
+    const assignId = 'ta_' + id + '_' + targetMemberId;
+    db.prepare(`
+      INSERT INTO task_assignments (id, task_id, member_id, status, completed_at, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(task_id, member_id) DO UPDATE SET
+        status = excluded.status,
+        completed_at = excluded.completed_at,
+        updated_at = excluded.updated_at
+    `).run(assignId, id, targetMemberId, status, completed_at, now, now);
+
+    // Compute overall task status based on all assignments
+    const assignments = db.prepare('SELECT status FROM task_assignments WHERE task_id = ?').all(id) as any[];
+    if (assignments.length > 0) {
+      const allCompleted = assignments.every((a) => a.status === 'Completed');
+      const anyInProgress = assignments.some((a) => a.status === 'In Progress' || a.status === 'Completed');
+      const anyBlocked = assignments.some((a) => a.status === 'Blocked');
+
+      let newParentStatus = 'Not Started';
+      if (allCompleted) newParentStatus = 'Completed';
+      else if (anyBlocked) newParentStatus = 'Blocked';
+      else if (anyInProgress) newParentStatus = 'In Progress';
+
+      db.prepare(`
+        UPDATE tasks
+        SET status = ?,
+            completed_at = CASE WHEN ? = 'Completed' THEN ? ELSE NULL END
+        WHERE id = ?
+      `).run(newParentStatus, newParentStatus, now, id);
+    }
+
+    const taskTitle = (db.prepare('SELECT title FROM tasks WHERE id = ?').get(id) as any)?.title || id;
+    logActivity(user_name || req.user?.name || 'User', req.user?.id || null, `updated personal task status to "${status}"`, 'Task', taskTitle);
+
+    const taskRows = db.prepare(`
+      SELECT t.*, m.title as milestone_title, tm.name as assigned_to_name
+      FROM tasks t
+      LEFT JOIN milestones m ON t.milestone_id = m.id
+      LEFT JOIN team_members tm ON t.assigned_to_id = tm.id
+      WHERE t.id = ?
+    `).all(id);
+
+    const enriched = attachTaskAssignments(taskRows);
+    res.json(enriched[0]);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -1369,7 +1666,8 @@ app.get('/api/documents', (_req: Request, res: Response) => {
       WHERE d.deleted_at IS NULL
       ORDER BY d.created_at DESC
     `).all();
-    res.json(docs);
+    const enriched = attachReadingAssignments(docs, 'document');
+    res.json(enriched);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -1381,25 +1679,52 @@ app.post('/api/documents/upload', requireAuth, upload.single('file'), (req: Auth
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    const { type, description, user_name } = req.body;
+    const {
+      type,
+      description,
+      user_name,
+      is_all_members,
+      assigned_member_ids,
+      due_date,
+      instructions,
+      uploaded_by_id,
+    } = req.body;
+
     const id = 'doc_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
     const file_url = `/uploads/${req.file.filename}`;
     const file_size = (req.file.size / 1024).toFixed(1) + ' KB';
     const created_at = new Date().toISOString();
+    const isAll = Boolean(is_all_members) ? 1 : 0;
+
+    const uId = req.user?.id || uploaded_by_id || null;
+    const userExists = uId ? db.prepare('SELECT id FROM team_members WHERE id = ?').get(uId) : null;
+    const safe_uploaded_by_id = userExists ? uId : null;
+
+    let memberIds = assigned_member_ids;
+    if (typeof memberIds === 'string') {
+      try { memberIds = JSON.parse(memberIds); } catch (_) { memberIds = memberIds.split(',').map((s: string) => s.trim()); }
+    }
 
     db.prepare(`
-      INSERT INTO documents (id, file_name, file_url, file_size, uploaded_by_id, type, description, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO documents (
+        id, file_name, file_url, file_size, uploaded_by_id, type, description,
+        is_all_members, due_date, instructions, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       req.file.originalname,
       file_url,
       file_size,
-      req.user?.id || null,
+      safe_uploaded_by_id,
       type || 'Datasheet',
       description || '',
+      isAll,
+      due_date || '',
+      instructions || '',
       created_at
     );
+
+    syncReadingAssignments('document', id, isAll, memberIds, instructions, due_date);
 
     logActivity(user_name || req.user?.name || 'User', req.user?.id || null, 'uploaded project document', 'Document', req.file.originalname);
 
@@ -1408,9 +1733,10 @@ app.post('/api/documents/upload', requireAuth, upload.single('file'), (req: Auth
       FROM documents d
       LEFT JOIN team_members tm ON d.uploaded_by_id = tm.id
       WHERE d.id = ?
-    `).get(id);
+    `).all(id);
 
-    res.status(201).json(newDoc);
+    const enriched = attachReadingAssignments(newDoc, 'document');
+    res.status(201).json(enriched[0]);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -1441,7 +1767,8 @@ app.get('/api/research-papers', (_req: Request, res: Response) => {
       WHERE p.deleted_at IS NULL
       ORDER BY p.updated_at DESC
     `).all();
-    res.json(papers);
+    const enriched = attachReadingAssignments(papers, 'research_paper');
+    res.json(enriched);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -1463,6 +1790,10 @@ app.post('/api/research-papers', requireAuth, (req: AuthRequest, res: Response) 
       summary,
       notes,
       reading_status,
+      is_all_members,
+      assigned_member_ids,
+      due_date,
+      instructions,
       user_name,
     } = req.body;
 
@@ -1470,20 +1801,27 @@ app.post('/api/research-papers', requireAuth, (req: AuthRequest, res: Response) 
 
     const id = 'ppr_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
     const created_at = new Date().toISOString();
+    const isAll = Boolean(is_all_members) ? 1 : 0;
 
     const userExists = req.user?.id ? db.prepare('SELECT id FROM team_members WHERE id = ?').get(req.user.id) : null;
     const added_by_id = userExists ? req.user?.id : null;
 
+    let memberIds = assigned_member_ids;
+    if (typeof memberIds === 'string') {
+      try { memberIds = JSON.parse(memberIds); } catch (_) { memberIds = memberIds.split(',').map((s: string) => s.trim()); }
+    }
+
     db.prepare(`
       INSERT INTO research_papers (
         id, title, authors, year, journal_conference, doi, url, pdf_url, pdf_name,
-        topic, tags, summary, notes, reading_status, added_by_id, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        topic, tags, summary, notes, reading_status, is_all_members, due_date, instructions,
+        added_by_id, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       title,
       authors || '',
-      year || null,
+      year ? parseInt(year) : null,
       journal_conference || '',
       doi || '',
       url || '',
@@ -1494,10 +1832,15 @@ app.post('/api/research-papers', requireAuth, (req: AuthRequest, res: Response) 
       summary || '',
       notes || '',
       reading_status || 'Unread',
+      isAll,
+      due_date || '',
+      instructions || '',
       added_by_id,
       created_at,
       created_at
     );
+
+    syncReadingAssignments('research_paper', id, isAll, memberIds, instructions, due_date);
 
     logActivity(user_name || req.user?.name || 'User', req.user?.id || null, 'added research paper', 'Research', title);
 
@@ -1506,9 +1849,10 @@ app.post('/api/research-papers', requireAuth, (req: AuthRequest, res: Response) 
       FROM research_papers p
       LEFT JOIN team_members tm ON p.added_by_id = tm.id
       WHERE p.id = ?
-    `).get(id);
+    `).all(id);
 
-    res.status(201).json(newPaper);
+    const enriched = attachReadingAssignments(newPaper, 'research_paper');
+    res.status(201).json(enriched[0]);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -1534,15 +1878,27 @@ app.post('/api/research-papers/upload-pdf', requireAuth, upload.single('pdf_file
       summary,
       notes,
       reading_status,
+      is_all_members,
+      assigned_member_ids,
+      due_date,
+      instructions,
       user_name,
     } = req.body;
 
     const pdf_url = `/uploads/${req.file.filename}`;
     const pdf_name = req.file.originalname;
 
+    let memberIds = assigned_member_ids;
+    if (typeof memberIds === 'string') {
+      try { memberIds = JSON.parse(memberIds); } catch (_) { memberIds = memberIds.split(',').map((s: string) => s.trim()); }
+    }
+
     // 1. If updating an existing paper
     if (paperId) {
       const updated_at = new Date().toISOString();
+      const hasIsAll = typeof is_all_members !== 'undefined';
+      const isAll = hasIsAll ? (Boolean(is_all_members) ? 1 : 0) : undefined;
+
       db.prepare(`
         UPDATE research_papers
         SET title = COALESCE(?, title),
@@ -1558,6 +1914,9 @@ app.post('/api/research-papers/upload-pdf', requireAuth, upload.single('pdf_file
             summary = COALESCE(?, summary),
             notes = COALESCE(?, notes),
             reading_status = COALESCE(?, reading_status),
+            is_all_members = COALESCE(?, is_all_members),
+            due_date = COALESCE(?, due_date),
+            instructions = COALESCE(?, instructions),
             updated_at = ?
         WHERE id = ?
       `).run(
@@ -1574,9 +1933,17 @@ app.post('/api/research-papers/upload-pdf', requireAuth, upload.single('pdf_file
         summary || null,
         notes || null,
         reading_status || null,
+        isAll,
+        due_date || null,
+        instructions || null,
         updated_at,
         paperId
       );
+
+      if (hasIsAll || Array.isArray(memberIds)) {
+        const curr = db.prepare('SELECT is_all_members, instructions, due_date FROM research_papers WHERE id = ?').get(paperId) as any;
+        syncReadingAssignments('research_paper', paperId, isAll ?? curr?.is_all_members, memberIds, instructions ?? curr?.instructions, due_date ?? curr?.due_date);
+      }
 
       logActivity(user_name || req.user?.name || 'User', req.user?.id || null, 'updated research paper with PDF', 'Research', title || paperId);
 
@@ -1585,15 +1952,17 @@ app.post('/api/research-papers/upload-pdf', requireAuth, upload.single('pdf_file
         FROM research_papers p
         LEFT JOIN team_members tm ON p.added_by_id = tm.id
         WHERE p.id = ?
-      `).get(paperId);
+      `).all(paperId);
 
-      return res.json(updated);
+      const enriched = attachReadingAssignments(updated, 'research_paper');
+      return res.json(enriched[0]);
     }
 
     // 2. If creating a new paper (title is present)
     if (title && title.trim()) {
       const id = 'ppr_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
       const created_at = new Date().toISOString();
+      const isAll = Boolean(is_all_members) ? 1 : 0;
 
       const userExists = req.user?.id ? db.prepare('SELECT id FROM team_members WHERE id = ?').get(req.user.id) : null;
       const added_by_id = userExists ? req.user?.id : null;
@@ -1601,8 +1970,9 @@ app.post('/api/research-papers/upload-pdf', requireAuth, upload.single('pdf_file
       db.prepare(`
         INSERT INTO research_papers (
           id, title, authors, year, journal_conference, doi, url, pdf_url, pdf_name,
-          topic, tags, summary, notes, reading_status, added_by_id, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          topic, tags, summary, notes, reading_status, is_all_members, due_date, instructions,
+          added_by_id, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         id,
         title.trim(),
@@ -1618,10 +1988,15 @@ app.post('/api/research-papers/upload-pdf', requireAuth, upload.single('pdf_file
         summary || '',
         notes || '',
         reading_status || 'Unread',
+        isAll,
+        due_date || '',
+        instructions || '',
         added_by_id,
         created_at,
         created_at
       );
+
+      syncReadingAssignments('research_paper', id, isAll, memberIds, instructions, due_date);
 
       logActivity(user_name || req.user?.name || 'User', req.user?.id || null, 'added research paper', 'Research', title.trim());
 
@@ -1630,9 +2005,10 @@ app.post('/api/research-papers/upload-pdf', requireAuth, upload.single('pdf_file
         FROM research_papers p
         LEFT JOIN team_members tm ON p.added_by_id = tm.id
         WHERE p.id = ?
-      `).get(id);
+      `).all(id);
 
-      return res.status(201).json(newPaper);
+      const enriched = attachReadingAssignments(newPaper, 'research_paper');
+      return res.status(201).json(enriched[0]);
     }
 
     // 3. Standalone file upload fallback
@@ -1662,10 +2038,21 @@ app.put('/api/research-papers/:id', requireAuth, (req: AuthRequest, res: Respons
       summary,
       notes,
       reading_status,
+      is_all_members,
+      assigned_member_ids,
+      due_date,
+      instructions,
       user_name,
     } = req.body;
 
     const updated_at = new Date().toISOString();
+    const hasIsAll = typeof is_all_members !== 'undefined';
+    const isAll = hasIsAll ? (Boolean(is_all_members) ? 1 : 0) : undefined;
+
+    let memberIds = assigned_member_ids;
+    if (typeof memberIds === 'string') {
+      try { memberIds = JSON.parse(memberIds); } catch (_) { memberIds = memberIds.split(',').map((s: string) => s.trim()); }
+    }
 
     db.prepare(`
       UPDATE research_papers
@@ -1682,12 +2069,15 @@ app.put('/api/research-papers/:id', requireAuth, (req: AuthRequest, res: Respons
           summary = COALESCE(?, summary),
           notes = COALESCE(?, notes),
           reading_status = COALESCE(?, reading_status),
+          is_all_members = COALESCE(?, is_all_members),
+          due_date = COALESCE(?, due_date),
+          instructions = COALESCE(?, instructions),
           updated_at = ?
       WHERE id = ?
     `).run(
       title,
       authors,
-      year,
+      year ? parseInt(year) : null,
       journal_conference,
       doi,
       url,
@@ -1698,9 +2088,17 @@ app.put('/api/research-papers/:id', requireAuth, (req: AuthRequest, res: Respons
       summary,
       notes,
       reading_status,
+      isAll,
+      due_date,
+      instructions,
       updated_at,
       id
     );
+
+    if (hasIsAll || Array.isArray(memberIds)) {
+      const curr = db.prepare('SELECT is_all_members, instructions, due_date FROM research_papers WHERE id = ?').get(id) as any;
+      syncReadingAssignments('research_paper', id, isAll ?? curr?.is_all_members, memberIds, instructions ?? curr?.instructions, due_date ?? curr?.due_date);
+    }
 
     logActivity(user_name || req.user?.name || 'User', req.user?.id || null, 'updated research paper', 'Research', title || id);
 
@@ -1709,9 +2107,10 @@ app.put('/api/research-papers/:id', requireAuth, (req: AuthRequest, res: Respons
       FROM research_papers p
       LEFT JOIN team_members tm ON p.added_by_id = tm.id
       WHERE p.id = ?
-    `).get(id);
+    `).all(id);
 
-    res.json(updated);
+    const enriched = attachReadingAssignments(updated, 'research_paper');
+    res.json(enriched[0]);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -1742,7 +2141,8 @@ app.get('/api/learning-resources', (_req: Request, res: Response) => {
       WHERE r.deleted_at IS NULL
       ORDER BY r.created_at DESC
     `).all();
-    res.json(resources);
+    const enriched = attachReadingAssignments(resources, 'learning_resource');
+    res.json(enriched);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -1750,15 +2150,37 @@ app.get('/api/learning-resources', (_req: Request, res: Response) => {
 
 app.post('/api/learning-resources', requireAuth, (req: AuthRequest, res: Response) => {
   try {
-    const { title, url, resource_type, topic, description, tags, notes, user_name } = req.body;
+    const {
+      title,
+      url,
+      resource_type,
+      topic,
+      description,
+      tags,
+      notes,
+      is_all_members,
+      assigned_member_ids,
+      due_date,
+      instructions,
+      user_name,
+    } = req.body;
+
     if (!title || !url) return res.status(400).json({ error: 'Title and URL are required' });
 
     const id = 'res_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
     const created_at = new Date().toISOString();
+    const isAll = Boolean(is_all_members) ? 1 : 0;
+
+    let memberIds = assigned_member_ids;
+    if (typeof memberIds === 'string') {
+      try { memberIds = JSON.parse(memberIds); } catch (_) { memberIds = memberIds.split(',').map((s: string) => s.trim()); }
+    }
 
     db.prepare(`
-      INSERT INTO learning_resources (id, title, url, resource_type, topic, description, tags, notes, added_by_id, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO learning_resources (
+        id, title, url, resource_type, topic, description, tags, notes,
+        is_all_members, due_date, instructions, added_by_id, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       title,
@@ -1768,9 +2190,14 @@ app.post('/api/learning-resources', requireAuth, (req: AuthRequest, res: Respons
       description || '',
       tags || '',
       notes || '',
+      isAll,
+      due_date || '',
+      instructions || '',
       req.user?.id || null,
       created_at
     );
+
+    syncReadingAssignments('learning_resource', id, isAll, memberIds, instructions, due_date);
 
     logActivity(user_name || req.user?.name || 'User', req.user?.id || null, 'added learning resource', 'Learning', title);
 
@@ -1779,9 +2206,10 @@ app.post('/api/learning-resources', requireAuth, (req: AuthRequest, res: Respons
       FROM learning_resources r
       LEFT JOIN team_members tm ON r.added_by_id = tm.id
       WHERE r.id = ?
-    `).get(id);
+    `).all(id);
 
-    res.status(201).json(newRes);
+    const enriched = attachReadingAssignments(newRes, 'learning_resource');
+    res.status(201).json(enriched[0]);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -1790,7 +2218,28 @@ app.post('/api/learning-resources', requireAuth, (req: AuthRequest, res: Respons
 app.put('/api/learning-resources/:id', requireAuth, (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { title, url, resource_type, topic, description, tags, notes, user_name } = req.body;
+    const {
+      title,
+      url,
+      resource_type,
+      topic,
+      description,
+      tags,
+      notes,
+      is_all_members,
+      assigned_member_ids,
+      due_date,
+      instructions,
+      user_name,
+    } = req.body;
+
+    const hasIsAll = typeof is_all_members !== 'undefined';
+    const isAll = hasIsAll ? (Boolean(is_all_members) ? 1 : 0) : undefined;
+
+    let memberIds = assigned_member_ids;
+    if (typeof memberIds === 'string') {
+      try { memberIds = JSON.parse(memberIds); } catch (_) { memberIds = memberIds.split(',').map((s: string) => s.trim()); }
+    }
 
     db.prepare(`
       UPDATE learning_resources
@@ -1800,9 +2249,17 @@ app.put('/api/learning-resources/:id', requireAuth, (req: AuthRequest, res: Resp
           topic = COALESCE(?, topic),
           description = COALESCE(?, description),
           tags = COALESCE(?, tags),
-          notes = COALESCE(?, notes)
+          notes = COALESCE(?, notes),
+          is_all_members = COALESCE(?, is_all_members),
+          due_date = COALESCE(?, due_date),
+          instructions = COALESCE(?, instructions)
       WHERE id = ?
-    `).run(title, url, resource_type, topic, description, tags, notes, id);
+    `).run(title, url, resource_type, topic, description, tags, notes, isAll, due_date, instructions, id);
+
+    if (hasIsAll || Array.isArray(memberIds)) {
+      const curr = db.prepare('SELECT is_all_members, instructions, due_date FROM learning_resources WHERE id = ?').get(id) as any;
+      syncReadingAssignments('learning_resource', id, isAll ?? curr?.is_all_members, memberIds, instructions ?? curr?.instructions, due_date ?? curr?.due_date);
+    }
 
     logActivity(user_name || req.user?.name || 'User', req.user?.id || null, 'updated learning resource', 'Learning', title || id);
 
@@ -1811,9 +2268,10 @@ app.put('/api/learning-resources/:id', requireAuth, (req: AuthRequest, res: Resp
       FROM learning_resources r
       LEFT JOIN team_members tm ON r.added_by_id = tm.id
       WHERE r.id = ?
-    `).get(id);
+    `).all(id);
 
-    res.json(updated);
+    const enriched = attachReadingAssignments(updated, 'learning_resource');
+    res.json(enriched[0]);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -1833,7 +2291,46 @@ app.delete('/api/learning-resources/:id', requireAuth, (req: AuthRequest, res: R
 });
 
 // -------------------------------------------------------------
-// 12. Engineering Notes
+// 12. Reading Material Individual Member Status Update
+// -------------------------------------------------------------
+app.put('/api/reading-assignments/:itemType/:itemId/status', requireAuth, (req: AuthRequest, res: Response) => {
+  try {
+    const { itemType, itemId } = req.params;
+    const { status, member_id, user_name } = req.body;
+    const targetMemberId = member_id || req.user?.id;
+    if (!targetMemberId) return res.status(400).json({ error: 'Member ID is required' });
+    if (!status) return res.status(400).json({ error: 'Status is required' });
+
+    const now = new Date().toISOString();
+    const completed_at = status === 'Completed' ? now : null;
+    const assignId = 'ra_' + itemType + '_' + itemId + '_' + targetMemberId;
+
+    db.prepare(`
+      INSERT INTO reading_assignments (id, item_type, item_id, member_id, status, completed_at, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(item_type, item_id, member_id) DO UPDATE SET
+        status = excluded.status,
+        completed_at = excluded.completed_at,
+        updated_at = excluded.updated_at
+    `).run(assignId, itemType, itemId, targetMemberId, status, completed_at, now, now);
+
+    // If research paper, update default reading_status if applicable
+    if (itemType === 'research_paper') {
+      const assignments = db.prepare('SELECT status FROM reading_assignments WHERE item_type = ? AND item_id = ?').all(itemType, itemId) as any[];
+      if (assignments.length > 0 && assignments.every((a) => a.status === 'Completed')) {
+        db.prepare('UPDATE research_papers SET reading_status = ?, updated_at = ? WHERE id = ?').run('Completed', now, itemId);
+      }
+    }
+
+    logActivity(user_name || req.user?.name || 'User', req.user?.id || null, `updated reading status to "${status}"`, 'Reading', itemId);
+    res.json({ success: true, status, completed_at });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// -------------------------------------------------------------
+// 13. Engineering Notes
 // -------------------------------------------------------------
 app.get('/api/engineering-notes', (_req: Request, res: Response) => {
   try {

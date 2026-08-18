@@ -318,6 +318,13 @@ export function useProjectStore() {
     return updated;
   };
 
+  const updateMyTaskStatus = async (taskId: string, status: string, memberId?: string) => {
+    const targetMemberId = memberId || currentUser?.id;
+    const updated = await api.updateMyTaskStatus(taskId, status, targetMemberId, currentUserName);
+    await fetchAllData();
+    return updated;
+  };
+
   const deleteTask = async (id: string) => {
     await api.deleteTask(id);
     await fetchAllData();
@@ -480,6 +487,14 @@ export function useProjectStore() {
   const deleteLearningResource = async (id: string) => {
     await api.deleteLearningResource(id);
     await fetchAllData();
+  };
+
+  // --- Reading Material Assignments ---
+  const updateMyReadingStatus = async (itemType: 'research_paper' | 'learning_resource' | 'document', itemId: string, status: string, memberId?: string) => {
+    const targetMemberId = memberId || currentUser?.id;
+    const res = await api.updateMyReadingStatus(itemType, itemId, status, targetMemberId, currentUserName);
+    await fetchAllData();
+    return res;
   };
 
   // --- Engineering Notes ---
@@ -680,6 +695,7 @@ export function useProjectStore() {
     updateMotorParameters,
     addTask,
     updateTask,
+    updateMyTaskStatus,
     deleteTask,
     addMilestone,
     updateMilestone,
@@ -710,6 +726,7 @@ export function useProjectStore() {
     addLearningResource,
     updateLearningResource,
     deleteLearningResource,
+    updateMyReadingStatus,
     addEngineeringNote,
     updateEngineeringNote,
     deleteEngineeringNote,
