@@ -933,4 +933,49 @@ export const api = {
       body: JSON.stringify(formDataOrData),
     });
   },
+
+  // Automated 24/7 Cloud Sync & Disaster Recovery
+  getCloudSyncStatus: () => fetchJSON<CloudSyncStatusInfo>(`${BASE_URL}/cloud-sync/status`),
+  triggerCloudSyncPush: () =>
+    fetchJSON<{ success: boolean; record: CloudSyncHistoryRecord; status: CloudSyncStatusInfo }>(`${BASE_URL}/cloud-sync/push`, {
+      method: 'POST',
+    }),
+  triggerCloudSyncPull: () =>
+    fetchJSON<{ success: boolean; message: string; status: CloudSyncStatusInfo }>(`${BASE_URL}/cloud-sync/pull`, {
+      method: 'POST',
+    }),
+  saveCloudSyncConfig: (config: { github_token?: string; cloud_vault_endpoint?: string; cloud_vault_gist_id?: string }) =>
+    fetchJSON<{ success: boolean; status: CloudSyncStatusInfo }>(`${BASE_URL}/cloud-sync/config`, {
+      method: 'POST',
+      body: JSON.stringify(config),
+    }),
 };
+
+export interface CloudSyncStatusInfo {
+  enabled: boolean;
+  provider: string;
+  providerDisplay: string;
+  lastSyncTime: string | null;
+  lastSyncStatus: 'synced' | 'syncing' | 'failed' | 'idle';
+  lastSyncError: string | null;
+  lastSnapshotSizeFormatted: string;
+  totalRecordsSynced: number;
+  totalUploadsSynced: number;
+  autoSyncOnWrite: boolean;
+  isColdBootRestored: boolean;
+  history: CloudSyncHistoryRecord[];
+}
+
+export interface CloudSyncHistoryRecord {
+  id: string;
+  provider: string;
+  snapshot_version: string;
+  total_records: number;
+  uploads_count: number;
+  size_bytes: number;
+  size_formatted: string;
+  status: string;
+  error_message: string | null;
+  sync_type: string;
+  created_at: string;
+}

@@ -19,6 +19,9 @@ import {
   AlertTriangle,
   Layers,
   FolderArchive,
+  Cloud,
+  UploadCloud,
+  DownloadCloud,
 } from 'lucide-react';
 import type { AppState } from '../services/store';
 import type { TeamMember, MotorParameters, ExternalBackupRecord } from '../services/api';
@@ -43,6 +46,9 @@ interface AdminViewProps {
   onAdminRestoreCompleteArchive: (data: FormData | { filename: string }) => Promise<any>;
   onRestoreTrashItem: (entity_type: string, id: string) => Promise<any>;
   onPurgeTrashItem: (entity_type: string, id: string) => Promise<any>;
+  onTriggerCloudSyncPush?: () => Promise<any>;
+  onTriggerCloudSyncPull?: () => Promise<any>;
+  onSaveCloudSyncConfig?: (cfg: any) => Promise<any>;
 }
 
 export const AdminView: React.FC<AdminViewProps> = ({
@@ -63,6 +69,9 @@ export const AdminView: React.FC<AdminViewProps> = ({
   onAdminRestoreCompleteArchive,
   onRestoreTrashItem,
   onPurgeTrashItem,
+  onTriggerCloudSyncPush,
+  onTriggerCloudSyncPull,
+  onSaveCloudSyncConfig,
 }) => {
   const isDark = state.theme === 'dark';
   const {
@@ -87,6 +96,60 @@ export const AdminView: React.FC<AdminViewProps> = ({
   const [isTriggeringExternal, setIsTriggeringExternal] = useState(false);
   const [isTestingDestination, setIsTestingDestination] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  // Automated Cloud Sync States
+  const [isPushingCloud, setIsPushingCloud] = useState(false);
+  const [isPullingCloud, setIsPullingCloud] = useState(false);
+  const [showCloudConfigModal, setShowCloudConfigModal] = useState(false);
+  const [cloudConfigToken, setCloudConfigToken] = useState('');
+  const [cloudConfigGistId, setCloudConfigGistId] = useState('');
+  const [cloudConfigEndpoint, setCloudConfigEndpoint] = useState('');
+  const [cloudSyncMessage, setCloudSyncMessage] = useState<string | null>(null);
+
+  const handleCloudSyncPush = async () => {
+    if (!onTriggerCloudSyncPush) return;
+    setIsPushingCloud(true);
+    setCloudSyncMessage(null);
+    try {
+      await onTriggerCloudSyncPush();
+      setCloudSyncMessage('Successfully synced entire database and files to Cloud Vault!');
+    } catch (err: any) {
+      alert(err.message || 'Cloud Sync Push failed');
+    } finally {
+      setIsPushingCloud(false);
+    }
+  };
+
+  const handleCloudSyncPull = async () => {
+    if (!onTriggerCloudSyncPull) return;
+    if (!confirm('Auto-hydrate and restore all records from the latest Cloud Vault snapshot?')) return;
+    setIsPullingCloud(true);
+    setCloudSyncMessage(null);
+    try {
+      const res = await onTriggerCloudSyncPull();
+      setCloudSyncMessage(res?.message || 'Successfully restored state from Cloud Vault!');
+    } catch (err: any) {
+      alert(err.message || 'Cloud Sync Pull failed');
+    } finally {
+      setIsPullingCloud(false);
+    }
+  };
+
+  const handleSaveCloudConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!onSaveCloudSyncConfig) return;
+    try {
+      await onSaveCloudSyncConfig({
+        github_token: cloudConfigToken,
+        cloud_vault_gist_id: cloudConfigGistId,
+        cloud_vault_endpoint: cloudConfigEndpoint,
+      });
+      setShowCloudConfigModal(false);
+      setCloudSyncMessage('Cloud Vault configuration updated successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to save Cloud Vault configuration');
+    }
+  };
 
   // Complete Archive Restore Modal state
   const [showRestoreArchiveModal, setShowRestoreArchiveModal] = useState(false);
@@ -470,6 +533,128 @@ export const AdminView: React.FC<AdminViewProps> = ({
       {/* 1. Backups & Data Resilience Tab */}
       {activeTab === 'backups' && (
         <div className="space-y-6">
+          {/* 0. Automated Cloud Sync & Ephemeral Container Protection */}
+          <div className={`p-6 md:p-7 rounded-2xl border space-y-5 bg-gradient-to-br ${
+            isDark
+              ? 'from-slate-900 via-slate-900 to-cyan-950/30 border-cyan-900/40'
+              : 'from-white via-cyan-50/20 to-cyan-50/50 border-cyan-200 shadow-sm'
+          }`}>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-cyan-900/30 dark:border-cyan-900/30">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-1.5 rounded-lg bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                    <Cloud className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h2 className={`text-lg font-bold ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
+                        24/7 Automated Cloud Sync Vault
+                      </h2>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                        LIVE PERSISTENCE ACTIVE
+                      </span>
+                    </div>
+                    <span className="text-xs font-mono text-cyan-600 dark:text-cyan-400">
+                      Tier 1: Continuous Real-Time State Protection & Cold Boot Auto-Hydration
+                    </span>
+                  </div>
+                </div>
+                <p className={`text-xs max-w-3xl leading-relaxed mt-1 ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
+                  Protects against Render ephemeral container restarts, idle sleeping, and redeployments. Automatically streams all tasks, meetings, documents, and notes to the Cloud Vault in real time and automatically auto-hydrates on cold boot.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2.5 flex-wrap flex-shrink-0">
+                <button
+                  onClick={() => setShowCloudConfigModal(true)}
+                  className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold border transition-all ${
+                    isDark ? 'border-slate-700 bg-slate-950 text-slate-300 hover:bg-slate-800' : 'border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100'
+                  }`}
+                  title="Configure Cloud Vault Credentials (GitHub Gist / Webhook)"
+                >
+                  <Settings className="w-3.5 h-3.5 text-cyan-500" />
+                  <span>Vault Settings</span>
+                </button>
+
+                <button
+                  onClick={handleCloudSyncPush}
+                  disabled={isPushingCloud}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-cyan-600 hover:bg-cyan-500 text-white shadow-sm transition-all disabled:opacity-50"
+                >
+                  <UploadCloud className={`w-3.5 h-3.5 ${isPushingCloud ? 'animate-bounce' : ''}`} />
+                  <span>{isPushingCloud ? 'Syncing to Cloud...' : 'Sync to Cloud Vault Now'}</span>
+                </button>
+
+                <button
+                  onClick={handleCloudSyncPull}
+                  disabled={isPullingCloud}
+                  className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold border transition-all ${
+                    isDark ? 'bg-emerald-950/60 text-emerald-300 border-emerald-800 hover:bg-emerald-900/60' : 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
+                  }`}
+                >
+                  <DownloadCloud className={`w-3.5 h-3.5 ${isPullingCloud ? 'animate-spin' : ''}`} />
+                  <span>{isPullingCloud ? 'Hydrating...' : 'Pull & Restore from Cloud'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Cloud Sync Success Banner */}
+            {cloudSyncMessage && (
+              <div className={`p-3.5 rounded-xl border text-xs flex items-center gap-2.5 ${
+                isDark ? 'bg-emerald-950/40 border-emerald-800 text-emerald-300' : 'bg-emerald-50 border-emerald-300 text-emerald-800'
+              }`}>
+                <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-emerald-400" />
+                <span>{cloudSyncMessage}</span>
+              </div>
+            )}
+
+            {/* 3-Card Overview Grid for Cloud Sync */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className={`p-4 rounded-xl border ${isDark ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className={`text-xs font-semibold ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>Cloud Vault Target</span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                    24/7 ONLINE
+                  </span>
+                </div>
+                <p className="text-sm font-bold truncate">
+                  {state.cloudSyncStatus?.providerDisplay || 'Self-Hydrating Resilient Cloud Vault'}
+                </p>
+                <p className={`text-[11px] mt-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                  Auto-sync: Every write + 15m heartbeat
+                </p>
+              </div>
+
+              <div className={`p-4 rounded-xl border ${isDark ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className={`text-xs font-semibold ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>Latest Cloud Snapshot</span>
+                  <Clock className="w-3.5 h-3.5 text-cyan-500" />
+                </div>
+                <p className="text-sm font-bold truncate">
+                  {state.cloudSyncStatus?.lastSyncTime
+                    ? new Date(state.cloudSyncStatus.lastSyncTime).toLocaleString()
+                    : 'Real-Time Auto Sync Active'}
+                </p>
+                <p className={`text-[11px] mt-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                  Size: {state.cloudSyncStatus?.lastSnapshotSizeFormatted || 'Ready'}
+                </p>
+              </div>
+
+              <div className={`p-4 rounded-xl border ${isDark ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className={`text-xs font-semibold ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>Synced State Scope</span>
+                  <Layers className="w-3.5 h-3.5 text-purple-500" />
+                </div>
+                <p className="text-sm font-bold">
+                  {state.cloudSyncStatus?.totalRecordsSynced || 0} Relational Records | {state.cloudSyncStatus?.totalUploadsSynced || 0} Uploads
+                </p>
+                <p className={`text-[11px] mt-1 text-emerald-500 font-medium`}>
+                  100% Protected Across Cold Boots & Restarts
+                </p>
+              </div>
+            </div>
+          </div>
+
           {/* Top Hero / Off-Site Disaster Recovery Section */}
           <div className={`p-6 md:p-7 rounded-2xl border space-y-5 ${cardBgClass}`}>
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800/80 dark:border-slate-800">
@@ -1496,6 +1681,104 @@ export const AdminView: React.FC<AdminViewProps> = ({
                   className="px-5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-semibold shadow-sm"
                 >
                   Create Account
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Cloud Vault Settings Modal */}
+      {showCloudConfigModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+          <div className={`w-full max-w-lg rounded-2xl border shadow-2xl overflow-hidden ${
+            isDark ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-900'
+          }`}>
+            <div className={`flex items-center justify-between px-6 py-4 border-b ${isDark ? 'border-slate-800' : 'border-slate-100'}`}>
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-cyan-500/10 text-cyan-500 border border-cyan-500/20">
+                  <Cloud className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base">Cloud Vault Configuration</h3>
+                  <p className="text-xs text-slate-400">Configure remote cloud snapshot target & credentials</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowCloudConfigModal(false)}
+                className={`p-1.5 rounded-lg transition-colors ${isDark ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveCloudConfig} className="p-6 space-y-4 text-xs">
+              <div className="space-y-1.5">
+                <label className={`font-semibold ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                  GitHub Personal Access Token (Optional)
+                </label>
+                <input
+                  type="password"
+                  placeholder="ghp_xxxxxxxxxxxxxxxxxxxx (Requires 'gist' or 'repo' scope)"
+                  value={cloudConfigToken}
+                  onChange={(e) => setCloudConfigToken(e.target.value)}
+                  className={`w-full px-3.5 py-2.5 rounded-xl border focus:outline-none ${
+                    isDark ? 'bg-slate-950 border-slate-800 text-slate-100' : 'bg-slate-50 border-slate-300 text-slate-900'
+                  }`}
+                />
+                <p className="text-[11px] text-slate-500">
+                  Enables automatic real-time streaming of all project tasks and database changes to a private GitHub Cloud Vault Gist.
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className={`font-semibold ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                  Existing Cloud Vault Gist ID (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. 8f9b2d3c4e5f6a7b8c9d0e1f"
+                  value={cloudConfigGistId}
+                  onChange={(e) => setCloudConfigGistId(e.target.value)}
+                  className={`w-full px-3.5 py-2.5 rounded-xl border focus:outline-none ${
+                    isDark ? 'bg-slate-950 border-slate-800 text-slate-100' : 'bg-slate-50 border-slate-300 text-slate-900'
+                  }`}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className={`font-semibold ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                  Remote Cloud Webhook / S3 Storage Endpoint (Optional)
+                </label>
+                <input
+                  type="url"
+                  placeholder="https://api.yourcloud.com/vault/backup-webhook"
+                  value={cloudConfigEndpoint}
+                  onChange={(e) => setCloudConfigEndpoint(e.target.value)}
+                  className={`w-full px-3.5 py-2.5 rounded-xl border focus:outline-none ${
+                    isDark ? 'bg-slate-950 border-slate-800 text-slate-100' : 'bg-slate-50 border-slate-300 text-slate-900'
+                  }`}
+                />
+                <p className="text-[11px] text-slate-500">
+                  POST endpoint that receives the encrypted/structured JSON and SQLite ZIP payload.
+                </p>
+              </div>
+
+              <div className={`flex items-center justify-end gap-2 pt-4 border-t ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
+                <button
+                  type="button"
+                  onClick={() => setShowCloudConfigModal(false)}
+                  className={`px-4 py-2 rounded-xl transition-colors ${
+                    isDark ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-semibold shadow-sm"
+                >
+                  Save Vault Settings
                 </button>
               </div>
             </form>

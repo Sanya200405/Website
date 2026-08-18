@@ -28,7 +28,9 @@ import {
   type GitHubRepoData,
   type GitHubCommitData,
   type MeetingItem,
+  type CloudSyncStatusInfo,
 } from './api';
+import { saveLocalStateBackup } from './cloudSyncService';
 
 const THEME_KEY = 'foc_drive_theme';
 const USER_KEY = 'foc_drive_current_user';
@@ -62,6 +64,7 @@ export interface AppState {
   adminBackupStatus: BackupStatusInfo | null;
   externalBackupStatus: ExternalBackupStatus | null;
   externalBackups: ExternalBackupRecord[];
+  cloudSyncStatus: CloudSyncStatusInfo | null;
   isLoading: boolean;
   error: string | null;
 }
@@ -136,6 +139,7 @@ export function useProjectStore() {
   const [adminBackupStatus, setAdminBackupStatus] = useState<BackupStatusInfo | null>(null);
   const [externalBackupStatus, setExternalBackupStatus] = useState<ExternalBackupStatus | null>(null);
   const [externalBackups, setExternalBackups] = useState<ExternalBackupRecord[]>([]);
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatusInfo | null>(null);
 
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -222,6 +226,11 @@ export function useProjectStore() {
       setReportSections(sectionsData);
       setActivities(activitiesData);
 
+      // Save local resilient backup cache in browser storage
+      saveLocalStateBackup(tasksData, meetingsData, notesData);
+
+      // Fetch 24/7 Cloud Sync status
+      api.getCloudSyncStatus().then((cs) => setCloudSyncStatus(cs)).catch(() => null);
 
       // Load Trash items if authenticated
       if (token) {
@@ -654,6 +663,25 @@ export function useProjectStore() {
     return res;
   };
 
+  const triggerCloudSyncPush = async () => {
+    const res = await api.triggerCloudSyncPush();
+    setCloudSyncStatus(res.status);
+    return res;
+  };
+
+  const triggerCloudSyncPull = async () => {
+    const res = await api.triggerCloudSyncPull();
+    setCloudSyncStatus(res.status);
+    await fetchAllData();
+    return res;
+  };
+
+  const saveCloudSyncConfig = async (cfg: { github_token?: string; cloud_vault_endpoint?: string; cloud_vault_gist_id?: string }) => {
+    const res = await api.saveCloudSyncConfig(cfg);
+    setCloudSyncStatus(res.status);
+    return res;
+  };
+
   return {
     state: {
       theme,
@@ -684,6 +712,7 @@ export function useProjectStore() {
       adminBackupStatus,
       externalBackupStatus,
       externalBackups,
+      cloudSyncStatus,
       isLoading,
       error,
     },
@@ -750,6 +779,9 @@ export function useProjectStore() {
     adminResetPassword,
     adminDeleteUser,
     adminDeleteStorageFile,
+    triggerCloudSyncPush,
+    triggerCloudSyncPull,
+    saveCloudSyncConfig,
   };
 }
 

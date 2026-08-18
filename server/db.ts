@@ -362,6 +362,26 @@ export function initDatabase() {
       updated_at TEXT NOT NULL,
       UNIQUE(item_type, item_id, member_id)
     );
+
+    CREATE TABLE IF NOT EXISTS cloud_sync_records (
+      id TEXT PRIMARY KEY,
+      provider TEXT NOT NULL,
+      snapshot_version TEXT NOT NULL,
+      total_records INTEGER NOT NULL,
+      uploads_count INTEGER NOT NULL,
+      size_bytes INTEGER NOT NULL,
+      size_formatted TEXT NOT NULL,
+      status TEXT NOT NULL,
+      error_message TEXT,
+      sync_type TEXT NOT NULL, -- 'auto_write' | 'manual_push' | 'auto_hydrate' | 'manual_pull'
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS cloud_sync_config (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
   `);
 
   // Column migrations for existing tables

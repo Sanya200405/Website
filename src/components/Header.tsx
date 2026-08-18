@@ -14,14 +14,17 @@ import {
   LogOut,
   ShieldCheck,
   Calendar,
+  Cloud,
 } from 'lucide-react';
-import type { TeamMember } from '../services/api';
+import type { TeamMember, CloudSyncStatusInfo } from '../services/api';
 import { UserAvatar } from './UserAvatar';
 
 interface HeaderProps {
   theme: 'dark' | 'light';
   onToggleTheme: () => void;
   currentUser: TeamMember | null;
+  cloudSyncStatus?: CloudSyncStatusInfo | null;
+  onTriggerCloudSync?: () => void;
   onOpenAuthModal: () => void;
   onLogout: () => void;
   onOpenSearch: () => void;
@@ -37,6 +40,8 @@ export const Header: React.FC<HeaderProps> = ({
   theme,
   onToggleTheme,
   currentUser,
+  cloudSyncStatus,
+  onTriggerCloudSync,
   onOpenAuthModal,
   onLogout,
   onOpenSearch,
@@ -176,6 +181,45 @@ export const Header: React.FC<HeaderProps> = ({
             </>
           )}
         </div>
+
+        {/* 24/7 Cloud Sync Badge */}
+        <button
+          onClick={onTriggerCloudSync}
+          className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
+            cloudSyncStatus?.lastSyncStatus === 'syncing'
+              ? isDark
+                ? 'bg-amber-950/40 border-amber-800/80 text-amber-300'
+                : 'bg-amber-50 border-amber-300 text-amber-800'
+              : cloudSyncStatus?.lastSyncStatus === 'failed'
+              ? isDark
+                ? 'bg-rose-950/40 border-rose-800 text-rose-300'
+                : 'bg-rose-50 border-rose-300 text-rose-800'
+              : isDark
+              ? 'bg-emerald-950/40 border-emerald-800/80 text-emerald-300 hover:bg-emerald-900/40'
+              : 'bg-emerald-50 border-emerald-300 text-emerald-800 hover:bg-emerald-100'
+          }`}
+          title={`24/7 Cloud Sync Vault: ${
+            cloudSyncStatus?.lastSyncTime
+              ? `Last synced at ${new Date(cloudSyncStatus.lastSyncTime).toLocaleTimeString()}`
+              : 'Auto-backed up to persistent vault'
+          } (Click to Sync Now)`}
+        >
+          <span className={`w-2 h-2 rounded-full ${
+            cloudSyncStatus?.lastSyncStatus === 'syncing'
+              ? 'bg-amber-500 animate-ping'
+              : cloudSyncStatus?.lastSyncStatus === 'failed'
+              ? 'bg-rose-500'
+              : 'bg-emerald-500'
+          }`} />
+          <Cloud className="w-3.5 h-3.5" />
+          <span className="hidden lg:inline">
+            {cloudSyncStatus?.lastSyncStatus === 'syncing'
+              ? 'Syncing to Cloud...'
+              : cloudSyncStatus?.lastSyncStatus === 'failed'
+              ? 'Cloud Sync Alert'
+              : 'Cloud Synced'}
+          </span>
+        </button>
 
         {/* Theme Toggle */}
         <button

@@ -108,6 +108,9 @@ export function App() {
     adminResetPassword,
     adminDeleteUser,
     adminDeleteStorageFile,
+    triggerCloudSyncPush,
+    triggerCloudSyncPull,
+    saveCloudSyncConfig,
   } = useProjectStore();
 
   const [currentNav, setCurrentNav] = useState<NavSection>('dashboard');
@@ -386,6 +389,9 @@ export function App() {
             onAdminRestoreCompleteArchive={adminRestoreCompleteArchive}
             onRestoreTrashItem={restoreTrashItem}
             onPurgeTrashItem={purgeTrashItem}
+            onTriggerCloudSyncPush={triggerCloudSyncPush}
+            onTriggerCloudSyncPull={triggerCloudSyncPull}
+            onSaveCloudSyncConfig={saveCloudSyncConfig}
           />
         );
       case 'activity':
@@ -430,6 +436,8 @@ export function App() {
           theme={state.theme}
           onToggleTheme={toggleTheme}
           currentUser={state.currentUser}
+          cloudSyncStatus={state.cloudSyncStatus}
+          onTriggerCloudSync={triggerCloudSyncPush}
           onOpenAuthModal={() => setIsAuthModalOpen(true)}
           onLogout={logout}
           onOpenSearch={() => setIsSearchOpen(true)}

@@ -29,6 +29,15 @@ import {
   EXTERNAL_BACKUP_DIR,
 } from './externalBackup';
 import {
+  initCloudSync,
+  triggerCloudSync,
+  getCloudSyncStatus,
+  pushToCloudVault,
+  performColdBootAutoHydration,
+  setVaultConfig,
+  getVaultConfig,
+} from './cloudSync';
+import {
   fetchGitHubRepo,
   fetchGitHubCommits,
   fetchGitHubBranches,
@@ -109,6 +118,22 @@ function requireAdmin(req: AuthRequest, res: Response, next: NextFunction) {
 }
 
 app.use(authenticateToken);
+
+// -------------------------------------------------------------
+// Cloud Sync Real-Time Mutation Hook
+// -------------------------------------------------------------
+app.use((req, res, next) => {
+  if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method) && req.path.startsWith('/api')) {
+    if (!req.path.startsWith('/api/cloud-sync') && !req.path.startsWith('/api/auth/login') && !req.path.startsWith('/api/auth/status')) {
+      res.on('finish', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          triggerCloudSync(2500);
+        }
+      });
+    }
+  }
+  next();
+});
 
 // -------------------------------------------------------------
 // 1. Authentication Endpoints
@@ -3335,7 +3360,55 @@ app.get('/api/activities', (_req: Request, res: Response) => {
   }
 });
 // -------------------------------------------------------------
-// 17. Serve Production Frontend SPA
+// 17. Automated 24/7 Cloud Sync & Disaster Recovery Endpoints
+// -------------------------------------------------------------
+app.get('/api/cloud-sync/status', (_req: Request, res: Response) => {
+  try {
+    const status = getCloudSyncStatus();
+    res.json(status);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/cloud-sync/push', requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const record = await pushToCloudVault(req.user?.name || 'Administrator', 'manual_push');
+    res.json({ success: true, record, status: getCloudSyncStatus() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/cloud-sync/pull', requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const restored = await performColdBootAutoHydration();
+    res.json({
+      success: restored,
+      message: restored ? 'Successfully restored state from Cloud Vault!' : 'Database is already up to date with Cloud Vault.',
+      status: getCloudSyncStatus(),
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/cloud-sync/config', requireAdmin, (req: AuthRequest, res: Response) => {
+  try {
+    const { github_token, cloud_vault_endpoint, cloud_vault_gist_id } = req.body;
+    if (github_token !== undefined) setVaultConfig('GITHUB_TOKEN', github_token.trim());
+    if (cloud_vault_endpoint !== undefined) setVaultConfig('CLOUD_VAULT_ENDPOINT', cloud_vault_endpoint.trim());
+    if (cloud_vault_gist_id !== undefined) setVaultConfig('CLOUD_VAULT_GIST_ID', cloud_vault_gist_id.trim());
+
+    logActivity(req.user?.name || 'Admin', req.user?.id || null, 'updated Cloud Sync Vault configuration', 'Cloud Sync', 'Config Update');
+    res.json({ success: true, status: getCloudSyncStatus() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// -------------------------------------------------------------
+// 18. Serve Production Frontend SPA
 // -------------------------------------------------------------
 const distCandidates = [
   path.resolve(__dirname, '../dist'),
@@ -3358,6 +3431,7 @@ if (fs.existsSync(DIST_DIR)) {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Backend server running on http://0.0.0.0:${PORT}`);
   setTimeout(() => {
+    try { initCloudSync(); } catch (e) { console.error('Cloud Sync init error:', e); }
     try { initAutomatedBackups(); } catch (e) { console.error('Automated backups init error:', e); }
     try { initExternalBackupsScheduler(); } catch (e) { console.error('External backups init error:', e); }
   }, 2000);
