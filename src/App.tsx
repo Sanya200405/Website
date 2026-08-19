@@ -16,6 +16,7 @@ import { LearningResourceModal } from './components/LearningResourceModal';
 import { NoteModal } from './components/NoteModal';
 import { ReportLinkModal } from './components/ReportLinkModal';
 import { ScheduleMeetingModal } from './components/ScheduleMeetingModal';
+import { ResilienceBanner } from './components/ResilienceBanner';
 
 import type {
   TaskItem,
@@ -447,6 +448,19 @@ export function App() {
           onOpenNewPaper={handleOpenNewPaper}
           onOpenNewResource={handleOpenNewResource}
           onOpenNewNote={handleOpenNewNote}
+        />
+        {/* Browser Resilience Auto-Restore Banner */}
+        <ResilienceBanner
+          tasks={state.tasks}
+          milestones={state.milestones}
+          meetings={state.meetings}
+          notes={state.engineeringNotes}
+          papers={state.researchPapers}
+          resources={state.learningResources}
+          tests={state.tests}
+          issues={state.issues}
+          simulations={state.simulations}
+          onRestored={refreshAll}
         />
 
         {/* Views Container */}

@@ -244,6 +244,13 @@ export function getFullProjectJsonDump(): Record<string, any> {
     meetings: db.prepare('SELECT * FROM meetings').all(),
     activities: db.prepare('SELECT * FROM activities ORDER BY timestamp DESC LIMIT 250').all(),
     backup_records: db.prepare('SELECT * FROM backup_records ORDER BY created_at DESC LIMIT 50').all(),
+    stored_files: (() => {
+      try {
+        return db.prepare('SELECT file_name, mime_type, size_bytes, data_base64, created_at FROM stored_files').all();
+      } catch (_) {
+        return [];
+      }
+    })(),
   };
 }
 

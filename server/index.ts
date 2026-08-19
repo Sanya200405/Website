@@ -43,6 +43,12 @@ import {
   fetchGitHubBranches,
   fetchGitHubTree,
 } from './github';
+import {
+  initPersistentStorage,
+  triggerPersistentSync,
+  persistUploadedFile,
+  getOrReconstituteFile,
+} from './persistence';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -71,7 +77,20 @@ const archiveUpload = multer({
 
 app.use(cors());
 app.use(express.json());
-app.use('/uploads', express.static(UPLOADS_DIR));
+
+// Persistent uploads middleware: reconstitutes missing files on-demand
+app.use('/uploads', async (req, res, next) => {
+  const fileName = path.basename(req.path);
+  if (fileName && fileName !== '/' && !fileName.startsWith('.')) {
+    const localPath = path.join(UPLOADS_DIR, fileName);
+    if (!fs.existsSync(localPath)) {
+      try {
+        await getOrReconstituteFile(fileName);
+      } catch (_) {}
+    }
+  }
+  next();
+}, express.static(UPLOADS_DIR));
 
 // -------------------------------------------------------------
 // Auth & Security Middleware
@@ -120,13 +139,14 @@ function requireAdmin(req: AuthRequest, res: Response, next: NextFunction) {
 app.use(authenticateToken);
 
 // -------------------------------------------------------------
-// Cloud Sync Real-Time Mutation Hook
+// Cloud Sync & Persistent Replication Real-Time Mutation Hook
 // -------------------------------------------------------------
 app.use((req, res, next) => {
   if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method) && req.path.startsWith('/api')) {
     if (!req.path.startsWith('/api/cloud-sync') && !req.path.startsWith('/api/auth/login') && !req.path.startsWith('/api/auth/status')) {
       res.on('finish', () => {
         if (res.statusCode >= 200 && res.statusCode < 300) {
+          triggerPersistentSync('api_mutation', 800);
           triggerCloudSync(2500);
         }
       });
@@ -1209,6 +1229,7 @@ app.post('/api/tests/upload-csv', requireAuth, upload.single('csv_file'), async 
     });
 
     const parsedCount = insertMany(lines);
+    persistUploadedFile(req.file.filename, req.file.mimetype || 'text/csv', req.file.size, req.file.path).catch(console.error);
     logActivity(user_name || req.user?.name || 'User', req.user?.id || null, `uploaded CSV dataset (${parsedCount} pts)`, 'Testing', test_name || req.file.originalname);
 
     const newTest = db.prepare(`
@@ -1751,6 +1772,7 @@ app.post('/api/documents/upload', requireAuth, upload.single('file'), (req: Auth
 
     syncReadingAssignments('document', id, isAll, memberIds, instructions, due_date);
 
+    persistUploadedFile(req.file.filename, req.file.mimetype || 'application/octet-stream', req.file.size, req.file.path).catch(console.error);
     logActivity(user_name || req.user?.name || 'User', req.user?.id || null, 'uploaded project document', 'Document', req.file.originalname);
 
     const newDoc = db.prepare(`
@@ -1889,6 +1911,8 @@ app.post('/api/research-papers/upload-pdf', requireAuth, upload.single('pdf_file
     if (!req.file) {
       return res.status(400).json({ error: 'No PDF file uploaded' });
     }
+
+    persistUploadedFile(req.file.filename, req.file.mimetype || 'application/pdf', req.file.size, req.file.path).catch(console.error);
 
     const {
       id: paperId,
@@ -3428,11 +3452,22 @@ if (fs.existsSync(DIST_DIR)) {
   });
 }
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Backend server running on http://0.0.0.0:${PORT}`);
-  setTimeout(() => {
-    try { initCloudSync(); } catch (e) { console.error('Cloud Sync init error:', e); }
-    try { initAutomatedBackups(); } catch (e) { console.error('Automated backups init error:', e); }
-    try { initExternalBackupsScheduler(); } catch (e) { console.error('External backups init error:', e); }
-  }, 2000);
-});
+async function startServer() {
+  try {
+    const persistResult = await initPersistentStorage();
+    console.log(`[Persistence Startup] ${persistResult.message}`);
+  } catch (err: any) {
+    console.error('[Persistence Startup] Storage init error:', err.message);
+  }
+
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Backend server running on http://0.0.0.0:${PORT}`);
+    setTimeout(() => {
+      try { initCloudSync(); } catch (e) { console.error('Cloud Sync init error:', e); }
+      try { initAutomatedBackups(); } catch (e) { console.error('Automated backups init error:', e); }
+      try { initExternalBackupsScheduler(); } catch (e) { console.error('External backups init error:', e); }
+    }, 2000);
+  });
+}
+
+startServer();

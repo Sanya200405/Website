@@ -147,6 +147,30 @@ export function countTotalRelationalRecords(): number {
 }
 
 /**
+ * Counts user-created content (excluding baseline team members and project configs)
+ */
+export function countUserContentRecords(): number {
+  let count = 0;
+  const userTables = [
+    'tasks', 'milestones', 'meetings', 'documents', 'research_papers',
+    'learning_resources', 'engineering_notes', 'tests', 'issues',
+    'simulation_models', 'report_sections'
+  ];
+  for (const tbl of userTables) {
+    try {
+      const row = db.prepare(`SELECT COUNT(*) as c FROM ${tbl} WHERE deleted_at IS NULL`).get() as any;
+      if (row?.c) count += Number(row.c);
+    } catch (_) {
+      try {
+        const row = db.prepare(`SELECT COUNT(*) as c FROM ${tbl}`).get() as any;
+        if (row?.c) count += Number(row.c);
+      } catch (_) {}
+    }
+  }
+  return count;
+}
+
+/**
  * Builds full state snapshot package
  */
 export async function buildCloudSnapshotPackage(): Promise<{
@@ -256,11 +280,18 @@ export async function pushToCloudVault(
     lastSnapshotSizeFormatted = sizeFormatted;
 
     // 1. Update local seed DB copy so static Docker images have newest baseline
-    try {
-      if (fs.existsSync(path.dirname(SEED_DB_PATH))) {
-        fs.writeFileSync(SEED_DB_PATH, pkg.dbBuffer);
-      }
-    } catch (_) {}
+    const seedCandidates = [
+      SEED_DB_PATH,
+      path.resolve(process.cwd(), 'server/project_seed.db'),
+      path.resolve(__dirname, '../server/project_seed.db'),
+    ].filter(Boolean);
+    for (const sp of seedCandidates) {
+      try {
+        if (fs.existsSync(path.dirname(sp))) {
+          fs.writeFileSync(sp, pkg.dbBuffer);
+        }
+      } catch (_) {}
+    }
 
     // 2. Write local persistent vault snapshot
     const localVaultZip = path.join(CLOUD_VAULT_DIR, 'latest_cloud_vault_bundle.zip');
@@ -786,6 +817,28 @@ export async function restoreFromJsonDump(jsonDump: any, initiatedBy: string = '
           );
         }
       }
+
+      // 15. Stored Files
+      if (Array.isArray(jsonDump.stored_files)) {
+        const stmt = db.prepare(`
+          INSERT INTO stored_files (file_name, mime_type, size_bytes, data_base64, created_at)
+          VALUES (?, ?, ?, ?, ?)
+          ON CONFLICT(file_name) DO UPDATE SET
+            mime_type = excluded.mime_type, size_bytes = excluded.size_bytes, data_base64 = excluded.data_base64
+        `);
+        for (const sf of jsonDump.stored_files) {
+          stmt.run(sf.file_name, sf.mime_type || 'application/octet-stream', sf.size_bytes || 0, sf.data_base64, sf.created_at || new Date().toISOString());
+          if (sf.file_name && sf.data_base64) {
+            try {
+              if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+              const dest = path.join(UPLOADS_DIR, sf.file_name);
+              if (!fs.existsSync(dest)) {
+                fs.writeFileSync(dest, Buffer.from(sf.data_base64, 'base64'));
+              }
+            } catch (_) {}
+          }
+        }
+      }
     })();
 
     isColdBootRestored = true;
@@ -803,31 +856,53 @@ export async function restoreFromJsonDump(jsonDump: any, initiatedBy: string = '
 }
 
 /**
- * Checks Cloud Vault on startup and auto-restores if container was cold-booted with missing data
+ * Checks Cloud Vault on startup and safely auto-restores if container was cold-booted with missing data
  */
 export async function performColdBootAutoHydration(): Promise<boolean> {
-  const currentRecordCount = countTotalRelationalRecords();
-  console.log(`[Cloud Sync] Cold boot check: Current active database has ${currentRecordCount} records.`);
+  const currentTotalRecords = countTotalRelationalRecords();
+  const currentContentCount = countUserContentRecords();
+  console.log(`[Cloud Sync] Cold boot check: Active DB has ${currentTotalRecords} total records (${currentContentCount} user content records).`);
 
   // 1. Check local persistent vault first
   const localVaultZip = path.join(CLOUD_VAULT_DIR, 'latest_cloud_vault_bundle.zip');
   const localVaultJson = path.join(CLOUD_VAULT_DIR, 'latest_cloud_snapshot.json');
 
-  if (fs.existsSync(localVaultZip)) {
+  if (fs.existsSync(localVaultJson) || fs.existsSync(localVaultZip)) {
     try {
-      const zipBuffer = fs.readFileSync(localVaultZip);
-      const zip = new AdmZip(zipBuffer);
-      const manifestEntry = zip.getEntry('manifest.json');
-      if (manifestEntry) {
-        const manifest = JSON.parse(manifestEntry.getData().toString('utf8'));
-        if (manifest.total_records > currentRecordCount || currentRecordCount <= 6) {
-          console.log(`[Cloud Sync] Local vault has ${manifest.total_records} records vs current ${currentRecordCount}. Auto-hydrating...`);
-          await restoreFromCloudVaultBundle(zipBuffer, 'Local Vault Cold Boot Hydration');
+      if (fs.existsSync(localVaultJson)) {
+        const raw = fs.readFileSync(localVaultJson, 'utf8');
+        const snap = JSON.parse(raw);
+        if (snap.jsonDump) {
+          console.log(`[Cloud Sync] Found local Cloud Vault JSON snapshot. Safely reconciling state...`);
+          await restoreFromJsonDump(snap.jsonDump, 'Local Vault Cold Boot Hydration');
+
+          // Extract uploads if present in zip
+          if (fs.existsSync(localVaultZip)) {
+            try {
+              const zip = new AdmZip(fs.readFileSync(localVaultZip));
+              if (!fs.existsSync(UPLOADS_DIR)) {
+                fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+              }
+              for (const entry of zip.getEntries()) {
+                if (entry.isDirectory) continue;
+                const name = entry.entryName.replace(/\\/g, '/');
+                if (name.startsWith('uploads/') && name !== 'uploads/') {
+                  const base = path.basename(name);
+                  if (base && !base.startsWith('.')) {
+                    const target = path.join(UPLOADS_DIR, base);
+                    if (!fs.existsSync(target)) {
+                      fs.writeFileSync(target, entry.getData());
+                    }
+                  }
+                }
+              }
+            } catch (_) {}
+          }
           return true;
         }
       }
     } catch (e: any) {
-      console.warn('[Cloud Sync] Local vault zip hydration failed:', e.message);
+      console.warn('[Cloud Sync] Local vault hydration failed:', e.message);
     }
   }
 
@@ -848,7 +923,7 @@ export async function performColdBootAutoHydration(): Promise<boolean> {
         const dumpFile = gist.files?.['project_data_dump.json'];
         if (dumpFile?.content) {
           const jsonDump = JSON.parse(dumpFile.content);
-          console.log('[Cloud Sync] Remote GitHub Gist vault found. Auto-hydrating relational data...');
+          console.log('[Cloud Sync] Remote GitHub Gist vault found. Safely merging relational data...');
           await restoreFromJsonDump(jsonDump, 'GitHub Gist Cloud Vault Hydration');
           return true;
         }

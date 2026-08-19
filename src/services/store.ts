@@ -227,7 +227,17 @@ export function useProjectStore() {
       setActivities(activitiesData);
 
       // Save local resilient backup cache in browser storage
-      saveLocalStateBackup(tasksData, meetingsData, notesData);
+      saveLocalStateBackup(
+        tasksData,
+        milestonesData,
+        meetingsData,
+        notesData,
+        papersData,
+        resourcesData,
+        testsData,
+        issuesData,
+        simulationsData
+      );
 
       // Fetch 24/7 Cloud Sync status
       api.getCloudSyncStatus().then((cs) => setCloudSyncStatus(cs)).catch(() => null);
